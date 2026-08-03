@@ -8,6 +8,7 @@ import { FilesPage } from './pages/Files'
 import { DrugsPage } from './pages/Drugs'
 import { KalimbaPage } from './pages/Kalimba'
 import { PlansPage } from './pages/Plans'
+import { RelationsPage } from './pages/Relations'
 
 function ProtectedRoute({ children }: { children: React.ReactNode }) {
   const { isAuthenticated, loading } = useAuth()
@@ -39,6 +40,7 @@ export default function App() {
             <Route path="/drugs" element={<DrugsPage />} />
             <Route path="/kalimba" element={<KalimbaPage />} />
             <Route path="/plans" element={<PlansPage />} />
+            <Route path="/relations" element={<RelationsPage />} />
           </Route>
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>

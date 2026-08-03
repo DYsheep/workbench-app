@@ -10,6 +10,7 @@ const NAV_ITEMS = [
   { to: '/drugs', label: '用药查询', icon: 'Pill' as const },
   { to: '/kalimba', label: '拇指琴', icon: 'Music' as const },
   { to: '/plans', label: '我的计划', icon: 'Calendar' as const },
+  { to: '/relations', label: '关系疏离', icon: 'Heart' as const },
 ]
 
 export function AppLayout() {

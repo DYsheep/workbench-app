@@ -83,6 +83,9 @@ db.exec(`
     cached_at TEXT DEFAULT (datetime('now'))
   );
 `)
+// 万维易源药品 API 索引表
+const drugApi = require('./drugs')
+drugApi.ensureIndexTable(db)
 console.log('[DB] Tables ready')
 
 // ============================================================
@@ -345,7 +348,8 @@ async function handleRequest(req, res) {
     return json(res, { data: rows })
   }
 
-  // ====== DRUGS ======
+  // ====== DRUGS (万维易源) ======
+  // GET /api/drugs/search?q=xxx → 本地索引候选 + 第一个候选详情
   if (pathname === '/api/drugs/search' && req.method === 'GET') {
     const sess = requireAuth(req, res)
     if (!sess) return
@@ -353,9 +357,89 @@ async function handleRequest(req, res) {
     const keyword = (q.q || '').trim()
     if (!keyword) return json(res, { error: '请输入药品名称' }, 400)
 
-    const drug = db.prepare('SELECT * FROM drug_cache WHERE keyword = ?').get(keyword)
-    if (!drug) return json(res, { data: null, message: '未找到该药品' })
-    return json(res, { data: { title: drug.title, content: drug.content } })
+    if (!drugApi.getConfig().hasAppCode) {
+      return json(res, { error: '服务端未配置万维易源 AppCode' }, 500)
+    }
+
+    // 索引为空时提示先构建
+    const indexCount = db.prepare('SELECT COUNT(*) as c FROM drug_index').get().c
+    if (indexCount === 0) {
+      return json(res, {
+        data: null,
+        needIndex: true,
+        message: '药品索引尚未建立，请先建立索引',
+      })
+    }
+
+    // 本地模糊匹配候选
+    let candidates = drugApi.searchIndex(db, keyword, 10)
+
+    // 索引未命中 → 按需补齐（深挖全库分类）
+    let detail = null
+    if (candidates.length) {
+      detail = await drugApi.fetchDetail(candidates[0].drug_id)
+    } else {
+      try {
+        const drugId = await drugApi.deepSearch(db, keyword)
+        if (drugId) {
+          candidates = drugApi.searchIndex(db, keyword, 10)
+          detail = await drugApi.fetchDetail(drugId)
+        }
+      } catch (e) {
+        console.error('[Drugs] deepSearch error:', e.message)
+      }
+    }
+
+    if (!detail) {
+      // 返回索引覆盖信息，前端可提示"已扩展索引，可重试"
+      const cov = db.prepare('SELECT COUNT(*) as c FROM drug_index_coverage').get()
+      const idx = db.prepare('SELECT COUNT(*) as c FROM drug_index').get()
+      return json(res, {
+        data: null,
+        deepSearched: true,
+        message: `未找到与「${keyword}」相关的药品（已自动扩展索引，覆盖 ${idx.c} 种药品，可再次搜索）`,
+        coverage: { classifies: cov.c, drugs: idx.c },
+      })
+    }
+    return json(res, { data: { detail, candidates } })
+  }
+
+  // POST /api/drugs/build-index → 触发索引构建
+  if (pathname === '/api/drugs/build-index' && req.method === 'POST') {
+    const sess = requireAuth(req, res)
+    if (!sess) return
+    if (!drugApi.getConfig().hasAppCode) {
+      return json(res, { error: '服务端未配置万维易源 AppCode' }, 500)
+    }
+    // 不阻塞响应，后台构建
+    drugApi.buildIndex(db).then(r => {
+      console.log('[Drugs] build-index:', r.message, '| total:', r.total || 0)
+    }).catch(e => console.error('[Drugs] build-index error:', e.message))
+    return json(res, { ok: true, message: '索引构建已启动' })
+  }
+
+  // GET /api/drugs/index-status → 索引状态
+  if (pathname === '/api/drugs/index-status' && req.method === 'GET') {
+    const sess = requireAuth(req, res)
+    if (!sess) return
+    const count = db.prepare('SELECT COUNT(*) as c FROM drug_index').get().c
+    return json(res, { data: { ...drugApi.getIndexState(), dbCount: count } })
+  }
+
+  // GET /api/drugs/detail?drugId=xxx → 指定药品详情
+  if (pathname === '/api/drugs/detail' && req.method === 'GET') {
+    const sess = requireAuth(req, res)
+    if (!sess) return
+    const q = parseQuery(url)
+    const drugId = (q.drugId || '').trim()
+    if (!drugId) return json(res, { error: '缺少 drugId' }, 400)
+    try {
+      const detail = await drugApi.fetchDetail(drugId)
+      if (!detail) return json(res, { data: null, message: '未找到该药品详情' })
+      return json(res, { data: detail })
+    } catch (e) {
+      return json(res, { data: null, message: e.message }, 502)
+    }
   }
 
   // ====== STATS ======

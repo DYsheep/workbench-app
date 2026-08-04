@@ -4,31 +4,24 @@ import { API_BASE } from '../store/auth'
 import { Link } from 'react-router-dom'
 
 // Quick check for today's reminders
-function getTodayReminders(): { type: 'birthday'|'visit'; name: string; relation: string }[] {
+function getTodayReminders(): { type: 'birthday'; name: string; relation: string }[] {
   try {
     const raw = localStorage.getItem('wb_relations_v3')
     if (!raw) return []
     const data = JSON.parse(raw)
-    // Collect people from all categories
     const allPeople: any[] = []
     for (const cat of ['family','friendship','love']) {
-      if (data[cat]?.people) allPeople.push(...data[cat].people)
+      const catData = data[cat]
+      if (Array.isArray(catData)) allPeople.push(...catData)
+      else if (catData?.people) allPeople.push(...catData.people)
     }
     const today = new Date()
     const mmdd = `${String(today.getMonth()+1).padStart(2,'0')}-${String(today.getDate()).padStart(2,'0')}`
-    const year = String(today.getFullYear())
     const reminders: ReturnType<typeof getTodayReminders> = []
 
     for (const p of allPeople) {
-      if (p.birthday === mmdd && p.lastBirthdayGreeted !== year) {
+      if (p.birthday === mmdd) {
         reminders.push({ type: 'birthday', name: p.name, relation: p.relationship })
-      }
-      if (p.visitReminder?.enabled && today.getDate() === p.visitReminder.dayOfMonth) {
-        const thisMonth = `${year}-${String(today.getMonth()+1).padStart(2,'0')}`
-        const visited = p.visitLog?.some((l: any) => l.date?.startsWith(thisMonth))
-        if (!visited) {
-          reminders.push({ type: 'visit', name: p.name, relation: p.relationship })
-        }
       }
     }
     return reminders
@@ -43,21 +36,19 @@ function TodayReminders() {
       <div className="flex flex-col gap-2">
         {reminders.map((r, i) => (
           <Link key={i} to="/relations"
-            className="flex items-center gap-3 px-4 py-3 rounded-xl border transition-all hover:shadow-sm"
-            style={{
-              background: r.type === 'birthday' ? '#fef2f2' : '#fff7ed',
-              borderColor: r.type === 'birthday' ? '#fecaca' : '#fed7aa',
-            }}
+            className="flex items-center gap-3 px-4 py-3 rounded-xl border border-red-200 transition-all hover:shadow-sm"
+            style={{ background: '#fef2f2' }}
           >
-            <span className="text-xl">{r.type === 'birthday' ? '🎂' : '📅'}</span>
+            <span className="text-xl">🎂</span>
             <div className="flex-1">
-              <span className="text-sm font-medium" style={{ color: r.type === 'birthday' ? '#991b1b' : '#9a3412' }}>
+              <span className="text-sm font-medium" style={{ color: '#991b1b' }}>
                 {r.name} {r.relation && `(${r.relation})`}
               </span>
-              <span className="text-xs ml-2" style={{ color: r.type === 'birthday' ? '#dc2626' : '#f97316' }}>
-                {r.type === 'birthday' ? '今天生日！记得祝福' : '今天该去看望了'}
+              <span className="text-xs ml-2" style={{ color: '#dc2626' }}>
+                今天生日！记得祝福
               </span>
             </div>
+            <span className="text-xs text-red-500">去处理 →</span>
             <span className="text-xs" style={{ color: r.type === 'birthday' ? '#ef4444' : '#f97316' }}>去处理 →</span>
           </Link>
         ))}

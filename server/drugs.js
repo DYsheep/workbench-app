@@ -202,12 +202,13 @@ function extractCoreKeyword(keyword) {
   return core || kw
 }
 
-function searchIndex(db, keyword, limit = 20) {
+// 返回全部同名候选（核心词已保证 ≥2 中文字符，匹配量可控）
+function searchIndex(db, keyword) {
   const core = extractCoreKeyword(keyword)
   return db.prepare(
     `SELECT drug_id, drug_name, manu, pzwh, classify_name
-     FROM drug_index WHERE drug_name LIKE ? ORDER BY drug_name LIMIT ?`
-  ).all(`%${core}%`, limit)
+     FROM drug_index WHERE drug_name LIKE ? ORDER BY drug_name`
+  ).all(`%${core}%`)
 }
 
 // 药品详情 → 前端统一结构

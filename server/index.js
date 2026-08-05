@@ -393,7 +393,7 @@ async function handleRequest(req, res) {
     }
 
     // 本地模糊匹配候选
-    let candidates = drugApi.searchIndex(db, keyword, 600)
+    let candidates = drugApi.searchIndex(db, keyword)
 
     // 索引未命中 → 按需补齐（深挖全库分类）
     let detail = null
@@ -403,7 +403,7 @@ async function handleRequest(req, res) {
       try {
         const drugId = await drugApi.deepSearch(db, keyword)
         if (drugId) {
-          candidates = drugApi.searchIndex(db, keyword, 600)
+          candidates = drugApi.searchIndex(db, keyword)
           detail = await drugApi.fetchDetail(drugId)
         }
       } catch (e) {

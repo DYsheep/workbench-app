@@ -71,7 +71,7 @@ function CandidateModal({ candidates, currentId, onSelect, onClose }: {
   const handleSelect = (c: Candidate) => { onSelect(c); onClose() }
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/30" onClick={onClose}>
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/30">
       <div
         className="bg-white rounded-xl w-full max-w-lg flex flex-col max-h-[75vh] shadow-xl"
         onClick={(e) => e.stopPropagation()}

@@ -421,6 +421,8 @@ export function DrugsPage() {
         </div>
       )}
 
+      </>
+      )}
       {/* ===== 详情区（搜索与收藏共用渲染，展示效果完全一致） ===== */}
       {((view === 'search') || (view === 'favorites' && favFrom)) && drug && (
         <div>
@@ -584,8 +586,6 @@ export function DrugsPage() {
 
           <p className="text-center text-[10px] text-zinc-300 mb-4">— 数据来自万维易源药品数据库，实际用药请遵医嘱 —</p>
         </div>
-      )}
-      </>
       )}
     </div>
   )

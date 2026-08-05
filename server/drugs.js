@@ -34,6 +34,44 @@ let indexState = {
 }
 
 // ============================================================
+// 分类 count 缓存（classify_counts.json）
+// 深挖的"地图"：存 714 个分类各自的药品总数，用于过滤已全量分类 + 广度优先排序。
+// 自动保鲜：buildIndex / deepSearch 拉 /drugInfo 时响应自带 count，顺手写回。
+// ============================================================
+let countCache = null // 惰性加载
+const COUNT_CACHE_PATH = path.join(__dirname, '..', 'classify_counts.json')
+
+function loadCountCache() {
+  if (countCache) return countCache
+  try {
+    const fs = require('fs')
+    countCache = fs.existsSync(COUNT_CACHE_PATH)
+      ? JSON.parse(fs.readFileSync(COUNT_CACHE_PATH, 'utf8'))
+      : {}
+  } catch {
+    countCache = {}
+  }
+  return countCache
+}
+
+function saveCountCache() {
+  try {
+    const fs = require('fs')
+    fs.writeFileSync(COUNT_CACHE_PATH, JSON.stringify(loadCountCache()), 'utf8')
+  } catch (e) {
+    console.error('[Drugs] save count cache failed:', e.message)
+  }
+}
+
+// 更新单个分类的 count（来自 /drugInfo 响应的 count 字段）
+function updateCountCache(classifyId, count) {
+  const n = Number(count)
+  if (n > 0) {
+    loadCountCache()[classifyId] = n
+  }
+}
+
+// ============================================================
 // HTTP helper
 // ============================================================
 function callApi(path, params = {}) {
@@ -116,6 +154,8 @@ async function buildIndex(db) {
           const list = body.data || []
           pages.push(...list)
           covered = p
+          // 自动重扫 count 缓存：响应自带分类药品总数，顺手写回
+          if (body.count) updateCountCache(c.classifyId, body.count)
           if (list.length < (body.maxResult || 20)) break
         }
         const insert = db.prepare(
@@ -138,6 +178,8 @@ async function buildIndex(db) {
 
   const workers = Array.from({ length: INDEX_CONCURRENCY }, worker)
   await Promise.all(workers)
+  // 构建完成：落盘刷新后的 count 缓存（分类体系变动时自动对齐）
+  saveCountCache()
   indexState.building = false
   indexState.lastBuildAt = new Date().toISOString()
   return { ok: true, message: '索引构建完成', total: indexState.total }
@@ -232,26 +274,25 @@ async function deepSearch(db, keyword, budget = DEEP_SEARCH_BUDGET) {
   // 分类选择策略（保证广度优先，避免重复加深前排分类）：
   // 1. 用 count 缓存计算每分类总页数，过滤掉已全量覆盖的分类
   // 2. 按"覆盖比例最低"排序 → 每次深挖铺开新分类，多轮后自然覆盖全库
-  let countCache = {}
+  // 3. count 缓存缺失/为空时不做过滤排序（降级为按原始顺序翻全部），保证深挖可用
+  const counts = loadCountCache()
+  let useMap = false
   try {
-    const fs = require('fs')
-    const cachePath = path.join(__dirname, '..', 'classify_counts.json')
-    if (fs.existsSync(cachePath)) {
-      countCache = JSON.parse(fs.readFileSync(cachePath, 'utf8'))
-    }
+    useMap = Object.keys(counts).length > 0
   } catch {}
-
-  classifies = classifies.filter(c => {
-    const total = countCache[c.classifyId] || 0
-    if (total === 0) return false
-    const covered = (getCov.get(c.classifyId) || {}).covered_pages || 0
-    return covered < Math.ceil(total / 20) // 未全量覆盖才需要翻
-  })
-  classifies.sort((a, b) => {
-    const ratioA = ((getCov.get(a.classifyId) || {}).covered_pages || 0) / Math.ceil((countCache[a.classifyId] || 1) / 20)
-    const ratioB = ((getCov.get(b.classifyId) || {}).covered_pages || 0) / Math.ceil((countCache[b.classifyId] || 1) / 20)
-    return ratioA - ratioB // 覆盖比例最低（翻得最少）的分类优先
-  })
+  if (useMap) {
+    classifies = classifies.filter(c => {
+      const total = counts[c.classifyId] || 0
+      if (total === 0) return false
+      const covered = (getCov.get(c.classifyId) || {}).covered_pages || 0
+      return covered < Math.ceil(total / 20) // 未全量覆盖才需要翻
+    })
+    classifies.sort((a, b) => {
+      const ratioA = ((getCov.get(a.classifyId) || {}).covered_pages || 0) / Math.ceil((counts[a.classifyId] || 1) / 20)
+      const ratioB = ((getCov.get(b.classifyId) || {}).covered_pages || 0) / Math.ceil((counts[b.classifyId] || 1) / 20)
+      return ratioA - ratioB // 覆盖比例最低（翻得最少）的分类优先
+    })
+  }
 
   let found = null   // 命中的药品条目
   let used = 0       // 已用 API 调用数
@@ -292,6 +333,8 @@ async function deepSearch(db, keyword, budget = DEEP_SEARCH_BUDGET) {
         const count = body.count || 0
         pagesFetched++
         lastCovered = page
+        // 顺手刷新 count 缓存（深挖也保持"地图"新鲜）
+        if (count > 0) updateCountCache(c.classifyId, count)
         // 整页入库（索引积累）
         insertPage(c, list)
         // 命中检查（药名包含核心关键词）
@@ -316,6 +359,8 @@ async function deepSearch(db, keyword, budget = DEEP_SEARCH_BUDGET) {
 
   const workers = Array.from({ length: DEEP_SEARCH_CONCURRENCY }, worker)
   await Promise.all(workers)
+  // 深挖后落盘 count 缓存（增量保鲜，不影响返回值）
+  saveCountCache()
   return found ? found.drugId : null
 }
 

@@ -94,6 +94,26 @@ db.exec(`
     created_at TEXT DEFAULT (datetime('now'))
   );
   CREATE INDEX IF NOT EXISTS idx_diary_images ON diary_images(diary_id);
+
+  -- ====== 我的计划（服务器端存储） ======
+  CREATE TABLE IF NOT EXISTS plans (
+    user_id TEXT NOT NULL REFERENCES users(id),
+    date TEXT NOT NULL,
+    tasks TEXT NOT NULL DEFAULT '[]',
+    notes TEXT NOT NULL DEFAULT '',
+    updated_at TEXT DEFAULT (datetime('now')),
+    PRIMARY KEY (user_id, date)
+  );
+
+  -- ====== 拇指琴统计（服务器端存储） ======
+  CREATE TABLE IF NOT EXISTS kalimba_stats (
+    user_id TEXT PRIMARY KEY REFERENCES users(id),
+    streak INTEGER DEFAULT 0,
+    last_date TEXT DEFAULT '',
+    total_time INTEGER DEFAULT 0,
+    achievements TEXT DEFAULT '[]',
+    updated_at TEXT DEFAULT (datetime('now'))
+  );
 `)
 // 万维易源药品 API 索引表
 const drugApi = require('./drugs')
@@ -530,6 +550,68 @@ async function handleRequest(req, res) {
       json(res, { error: 'Not found' }, 404)
     }
     return
+  }
+
+  // ====== PLANS（我的计划 · 服务器端存储） ======
+  // GET /api/plans → 当前用户全部计划 { "2026-08-05": { tasks, notes }, ... }
+  if (pathname === '/api/plans' && req.method === 'GET') {
+    const sess = requireAuth(req, res)
+    if (!sess) return
+    const rows = db.prepare('SELECT date, tasks, notes FROM plans WHERE user_id = ?').all(sess.user_id)
+    const data = {}
+    for (const r of rows) {
+      data[r.date] = { tasks: JSON.parse(r.tasks || '[]'), notes: r.notes || '' }
+    }
+    return json(res, { data })
+  }
+
+  // PUT /api/plans/:date → upsert 某天计划
+  const plansMatch = pathname.match(/^\/api\/plans\/([\d-]{10})$/)
+  if (plansMatch && req.method === 'PUT') {
+    const sess = requireAuth(req, res)
+    if (!sess) return
+    const { tasks, notes } = await parseBody(req)
+    const tasksJson = JSON.stringify(Array.isArray(tasks) ? tasks : [])
+    const notesStr = typeof notes === 'string' ? notes : ''
+    db.prepare(
+      `INSERT INTO plans (user_id, date, tasks, notes, updated_at) VALUES (?,?,?,?,datetime('now'))
+       ON CONFLICT(user_id, date) DO UPDATE SET tasks = excluded.tasks, notes = excluded.notes, updated_at = datetime('now')`
+    ).run(sess.user_id, plansMatch[1], tasksJson, notesStr)
+    return json(res, { ok: true })
+  }
+
+  // ====== KALIMBA（拇指琴 · 服务器端存储） ======
+  // GET /api/kalimba → { streak, lastDate, totalTime, achievements }
+  if (pathname === '/api/kalimba' && req.method === 'GET') {
+    const sess = requireAuth(req, res)
+    if (!sess) return
+    const row = db.prepare('SELECT * FROM kalimba_stats WHERE user_id = ?').get(sess.user_id)
+    if (!row) return json(res, { data: { streak: 0, lastDate: '', totalTime: 0, achievements: [] } })
+    return json(res, {
+      data: {
+        streak: row.streak || 0,
+        lastDate: row.last_date || '',
+        totalTime: row.total_time || 0,
+        achievements: JSON.parse(row.achievements || '[]'),
+      },
+    })
+  }
+
+  // PUT /api/kalimba → upsert 统计
+  if (pathname === '/api/kalimba' && req.method === 'PUT') {
+    const sess = requireAuth(req, res)
+    if (!sess) return
+    const { streak, lastDate, totalTime, achievements } = await parseBody(req)
+    const achJson = JSON.stringify(Array.isArray(achievements) ? achievements : [])
+    db.prepare(
+      `INSERT INTO kalimba_stats (user_id, streak, last_date, total_time, achievements, updated_at)
+       VALUES (?,?,?,?,?,datetime('now'))
+       ON CONFLICT(user_id) DO UPDATE SET
+         streak = excluded.streak, last_date = excluded.last_date,
+         total_time = excluded.total_time, achievements = excluded.achievements,
+         updated_at = datetime('now')`
+    ).run(sess.user_id, Number(streak) || 0, lastDate || '', Number(totalTime) || 0, achJson)
+    return json(res, { ok: true })
   }
 
   // ====== STATS ======

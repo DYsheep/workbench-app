@@ -1,5 +1,6 @@
 import { useState, useCallback, useRef, useEffect } from 'react'
 import { Icon } from '../components/icons'
+import { API_BASE } from '../store/auth'
 import { MicRhythmGame as RhythmOverlay } from './MicRhythmGame'
 
 // ============================================================
@@ -136,51 +137,98 @@ export function KalimbaPage() {
   const [currentSong, setCurrentSong] = useState(-1)
   const [songPlaying, setSongPlaying] = useState(false)
   const [currentNoteIdx, setCurrentNoteIdx] = useState(-1)
-  const [streak, setStreak] = useState(() => parseInt(localStorage.getItem('kb_streak') || '0'))
-  const [practiceMin, setPracticeMin] = useState(() => parseInt(localStorage.getItem('kb_time') || '0'))
-  const [achievements, setAchievements] = useState<Set<string>>(() => {
-    const saved = localStorage.getItem('kb_achievements')
-    return new Set(saved ? JSON.parse(saved) : [])
-  })
+  const [streak, setStreak] = useState(0)
+  const [practiceMin, setPracticeMin] = useState(0)
+  const [lastDate, setLastDate] = useState('')
+  const [achievements, setAchievements] = useState<Set<string>>(new Set())
+  const [loaded, setLoaded] = useState(false)
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null)
+
+  // 同步到服务器（乐观）
+  const syncKalimba = useCallback((s: number, min: number, ld: string, ach: Set<string>) => {
+    fetch(`${API_BASE}/api/kalimba`, {
+      method: 'PUT',
+      credentials: 'include',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ streak: s, totalTime: min, lastDate: ld, achievements: [...ach] }),
+    }).catch(() => {})
+  }, [])
+
+  // 初始加载：服务器优先；本地旧数据自动迁移上收
+  useEffect(() => {
+    let cancelled = false
+    ;(async () => {
+      try {
+        const res = await fetch(`${API_BASE}/api/kalimba`, { credentials: 'include' })
+        if (res.ok) {
+          const d = await res.json()
+          const server = d.data || {}
+          const hasServer = (server.streak > 0) || (server.totalTime > 0) || (server.achievements || []).length > 0 || !!server.lastDate
+          const localStreak = parseInt(localStorage.getItem('kb_streak') || '0')
+          const localTime = parseInt(localStorage.getItem('kb_time') || '0')
+          const localAch = JSON.parse(localStorage.getItem('kb_achievements') || '[]')
+          const localLast = lastDate || ''
+          const hasLocal = localStreak > 0 || localTime > 0 || localAch.length > 0 || !!localLast
+          if (!hasServer && hasLocal) {
+            // 迁移上收
+            syncKalimba(localStreak, localTime, localLast, new Set(localAch))
+            if (!cancelled) {
+              setStreak(localStreak); setPracticeMin(localTime); setLastDate(localLast)
+              setAchievements(new Set(localAch))
+            }
+            localStorage.removeItem('kb_streak'); localStorage.removeItem('kb_time')
+            localStorage.removeItem('kb_achievements'); localStorage.removeItem('kb_last_date')
+          } else {
+            if (!cancelled) {
+              setStreak(server.streak || 0); setPracticeMin(server.totalTime || 0)
+              setLastDate(server.lastDate || ''); setAchievements(new Set(server.achievements || []))
+            }
+            // 服务器已接管，清本地缓存
+            localStorage.removeItem('kb_streak'); localStorage.removeItem('kb_time')
+            localStorage.removeItem('kb_achievements'); localStorage.removeItem('kb_last_date')
+          }
+        }
+      } catch { /* 服务器不可达：保持默认值 */ }
+      if (!cancelled) setLoaded(true)
+    })()
+    return () => { cancelled = true }
+  }, [syncKalimba])
 
   useEffect(() => {
     timerRef.current = setInterval(() => {
       setPracticeMin((prev) => {
         const next = prev + 1
-        localStorage.setItem('kb_time', String(next))
+        syncKalimba(streak, next, lastDate, achievements)
         if (next >= 5 && !achievements.has('free_5min')) unlockAch('free_5min')
         return next
       })
     }, 60000)
     return () => { if (timerRef.current) clearInterval(timerRef.current) }
-  }, [])
+  }, [achievements, streak, lastDate, syncKalimba])
 
   useEffect(() => {
+    if (!loaded) return
     const today = new Date().toISOString().slice(0, 10)
-    const last = localStorage.getItem('kb_last_date')
-    if (last !== today) {
+    if (lastDate !== today) {
       const yesterday = new Date(Date.now() - 86400000).toISOString().slice(0, 10)
-      if (last === yesterday) {
+      if (lastDate === yesterday) {
         const ns = streak + 1
         setStreak(ns)
-        localStorage.setItem('kb_streak', String(ns))
         if (ns >= 3) unlockAch('streak_3')
         if (ns >= 7) unlockAch('streak_7')
-      } else if (last !== today) {
+      } else {
         setStreak(1)
-        localStorage.setItem('kb_streak', '1')
       }
-      localStorage.setItem('kb_last_date', today)
+      setLastDate(today)
     }
-  }, [])
+  }, [loaded, lastDate, streak])
 
   const unlockAch = (id: string) => {
     setAchievements((prev) => {
       if (prev.has(id)) return prev
       const next = new Set(prev)
       next.add(id)
-      localStorage.setItem('kb_achievements', JSON.stringify([...next]))
+      syncKalimba(streak, practiceMin, lastDate, next)
       return next
     })
   }
@@ -251,6 +299,10 @@ export function KalimbaPage() {
     const t = setTimeout(() => setMicHitId(null), 300)
     return () => clearTimeout(t)
   }, [micHitId])
+
+  if (!loaded) {
+    return <div className="max-w-screen-2xl mx-auto w-full"><p className="text-sm text-zinc-400 p-8">正在加载练习数据...</p></div>
+  }
 
   return (
     <div className="max-w-screen-2xl mx-auto w-full">
@@ -526,7 +578,7 @@ export function KalimbaPage() {
               {Array.from({ length: 28 }, (_, i) => {
                 const d = new Date(Date.now() - (27 - i) * 86400000)
                 const dateStr = d.toISOString().slice(0, 10)
-                const practiced = dateStr === localStorage.getItem('kb_last_date') || i < streak
+                const practiced = dateStr === lastDate || i < streak
                 return (
                   <div key={i} className={`aspect-square rounded-md flex items-center justify-center text-xs ${
                     practiced ? 'bg-indigo-100 text-indigo-700 font-medium' : 'bg-zinc-50 text-zinc-300'

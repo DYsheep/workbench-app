@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback } from 'react'
+import { API_BASE } from '../store/auth'
 
 // ============================================================
 // Types & Data
@@ -14,11 +15,30 @@ const DAILY_TEMPLATES: Task[] = [
 ]
 
 function todayKey(): string { return new Date().toISOString().slice(0, 10) }
-function loadPlans(): Record<string, DayPlan> {
+
+// 本地缓存（仅降级/迁移用）
+function loadLocalPlans(): Record<string, DayPlan> {
   try { return JSON.parse(localStorage.getItem('wb_plans') || '{}') } catch { return {} }
 }
-function savePlans(plans: Record<string, DayPlan>) {
-  localStorage.setItem('wb_plans', JSON.stringify(plans))
+
+// 从服务器拉取全量计划
+async function fetchPlansFromServer(): Promise<Record<string, DayPlan> | null> {
+  try {
+    const res = await fetch(`${API_BASE}/api/plans`, { credentials: 'include' })
+    if (!res.ok) return null
+    const d = await res.json()
+    return d.data || null
+  } catch { return null }
+}
+
+// 同步某天计划到服务器（乐观：失败静默，下次变更重试）
+function syncPlanToServer(date: string, plan: DayPlan) {
+  fetch(`${API_BASE}/api/plans/${date}`, {
+    method: 'PUT',
+    credentials: 'include',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(plan),
+  }).catch(() => {})
 }
 
 // ============================================================
@@ -311,12 +331,38 @@ function DayView({ date, plan, onToggle, onAdd, onDelete }: {
 // Main component
 // ============================================================
 export function PlansPage() {
-  const [plans, setPlans] = useState<Record<string, DayPlan>>(loadPlans)
+  const [plans, setPlans] = useState<Record<string, DayPlan>>({})
+  const [loaded, setLoaded] = useState(false)
   const [view, setView] = useState<'year' | 'month' | 'day'>('day')
   const [selectedDate, setSelectedDate] = useState(todayKey())
   const [streak, setStreak] = useState(0)
 
-  // Calculate streak
+  // 初始加载：服务器优先；本地旧数据自动迁移上收
+  useEffect(() => {
+    let cancelled = false
+    ;(async () => {
+      const server = await fetchPlansFromServer()
+      if (cancelled) return
+      const local = loadLocalPlans()
+      if (server && Object.keys(server).length > 0) {
+        localStorage.removeItem('wb_plans')
+        setPlans(server)
+      } else if (Object.keys(local).length > 0) {
+        // 迁移：逐日 PUT 上收
+        for (const [date, plan] of Object.entries(local)) {
+          syncPlanToServer(date, plan)
+        }
+        setPlans(local)
+        localStorage.removeItem('wb_plans')
+      } else {
+        setPlans(server || {})
+      }
+      if (!cancelled) setLoaded(true)
+    })()
+    return () => { cancelled = true }
+  }, [])
+
+  // 计算连续打卡
   useEffect(() => {
     let s = 0; const d = new Date()
     while (true) {
@@ -344,7 +390,7 @@ export function PlansPage() {
         tasks.push({ id: taskId, text: '', done: true })
       }
       const next = { ...prev, [k]: { ...(existing || { notes: '' }), tasks } }
-      savePlans(next)
+      syncPlanToServer(k, next[k])
       return next
     })
   }, [selectedDate])
@@ -357,7 +403,7 @@ export function PlansPage() {
       const maxId = tasks.reduce((m, t) => Math.max(m, t.id), 0)
       tasks.push({ id: maxId + 1, text, done: false })
       const next = { ...prev, [k]: { ...(existing || { notes: '' }), tasks } }
-      savePlans(next)
+      syncPlanToServer(k, next[k])
       return next
     })
   }, [selectedDate])
@@ -369,7 +415,7 @@ export function PlansPage() {
       if (!existing) return prev
       const tasks = existing.tasks.filter(t => t.id !== taskId)
       const next = { ...prev, [k]: { ...existing, tasks } }
-      savePlans(next)
+      syncPlanToServer(k, next[k])
       return next
     })
   }, [selectedDate])
@@ -387,6 +433,10 @@ export function PlansPage() {
       const t = p.tasks.length ? p.tasks : DAILY_TEMPLATES
       return c + t.filter(x => x.done).length
     }, 0)
+
+  if (!loaded) {
+    return <div className="max-w-screen-2xl mx-auto w-full"><p className="text-sm text-zinc-400 p-8">正在加载计划数据...</p></div>
+  }
 
   return (
     <div className="max-w-screen-2xl mx-auto w-full">

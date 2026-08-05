@@ -70,13 +70,30 @@ export function MicRhythmGame({ onDetect }: { onDetect: (tineId: number) => void
   // Sync notes to ref for use in RAF closure
   useEffect(() => { notesRef.current = notes }, [notes])
 
+  // 错误分类：给出可操作的中文引导（PWA 权限问题最常见）
+  const micErrorMsg = (e: any): string => {
+    const name = e?.name || ''
+    const msg = (e?.message || '').toLowerCase()
+    if (name === 'NotAllowedError' || name === 'PermissionDeniedError' || msg.includes('permission denied')) {
+      return '麦克风权限被拒绝。请检查：① 若从手机主屏幕打开，请先在 Safari/Chrome 浏览器中打开本网站并允许麦克风一次；② 浏览器设置 → 网站权限 → 允许本网站使用麦克风；③ 若曾点过"不允许"，需在设置中重置后重试。'
+    }
+    if (name === 'NotFoundError' || msg.includes('not found')) return '未检测到麦克风设备，请检查手机麦克风是否可用。'
+    if (name === 'SecurityError') return '当前环境不允许访问麦克风（需要 HTTPS 安全连接）。'
+    return '麦克风不可用：' + (e?.message || name || '未知错误')
+  }
+
   const reqMic = async () => {
-    try { setMicError('')
+    try {
+      setMicError('')
+      if (!navigator.mediaDevices?.getUserMedia) {
+        setMicError('当前浏览器不支持麦克风访问，请使用最新版 Chrome / Safari。')
+        return
+      }
       const s = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: false, noiseSuppression: false, autoGainControl: false } })
       const ctx = new AudioContext({ sampleRate: 44100 }); const an = ctx.createAnalyser()
       an.fftSize = 8192; an.smoothingTimeConstant = 0.2
       ctx.createMediaStreamSource(s).connect(an); audio.current = { ctx, an, s }; setMicReady(true)
-    } catch (e: any) { setMicError(e.message || '麦克风不可用') }
+    } catch (e: any) { setMicError(micErrorMsg(e)) }
   }
 
   const start = (i: number) => {
@@ -244,7 +261,12 @@ export function MicRhythmGame({ onDetect }: { onDetect: (tineId: number) => void
           <div style={{ background: 'rgba(139,92,246,0.1)', border: '1px solid rgba(139,92,246,0.25)', borderRadius: 14, padding: 16, marginBottom: 16 }}>
             <p className="text-sm font-medium text-violet-300 mb-3">需要麦克风权限</p>
             <button onClick={reqMic} className="w-full py-2.5 bg-violet-500 hover:bg-violet-400 text-white rounded-xl text-sm font-medium transition-colors">允许使用麦克风</button>
-            {micError && <p className="text-xs text-red-400 mt-2">{micError}</p>}
+            {micError && (
+              <div className="mt-3">
+                <p className="text-xs text-red-400 leading-relaxed">{micError}</p>
+                <button onClick={reqMic} className="mt-2 w-full py-2 border border-violet-400/40 text-violet-300 rounded-xl text-xs font-medium hover:bg-violet-500/10 transition-colors">重新请求权限</button>
+              </div>
+            )}
           </div>
         ) : <p className="text-xs text-emerald-400 mb-4">麦克风已就绪</p>}
         {micReady && (

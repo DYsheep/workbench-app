@@ -29,7 +29,7 @@ function getTodayReminders(): { type: 'birthday'; name: string; relation: string
 }
 
 function TodayReminders() {
-  const [reminders, setReminders] = useState(getTodayReminders())
+  const reminders = getTodayReminders()
   if (reminders.length === 0) return null
   return (
     <div className="mb-6">

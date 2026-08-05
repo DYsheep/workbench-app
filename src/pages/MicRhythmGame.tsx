@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useCallback } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { TINES, SONGS } from './Kalimba'
 
 // ============================================================
@@ -83,7 +83,7 @@ export function MicRhythmGame({ onDetect }: { onDetect: (tineId: number) => void
     setSongIdx(i); setCountdown(3); setState('countdown')
     setScore(0); setCombo(0); setMaxCombo(0)
     setJudge({ perfect: 0, good: 0, miss: 0 })
-    setCurTime(0); setNotes([])
+    setNotes([])
     cRef.current = 0; sRef.current = 0
   }
 

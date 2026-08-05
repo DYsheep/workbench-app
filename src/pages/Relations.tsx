@@ -1,4 +1,4 @@
-import { useState, useCallback, useMemo, useRef } from 'react'
+import { useState, useCallback, useRef } from 'react'
 
 type Category = 'family' | 'friendship' | 'love'
 
@@ -58,7 +58,6 @@ function saveData(data: RelationData) {
 function generateId() { return Date.now().toString(36)+Math.random().toString(36).slice(2,7) }
 function today() { return new Date().toISOString().slice(0,10) }
 function todayMMDD() { const d=new Date();return `${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}` }
-function thisYear() { return String(new Date().getFullYear()) }
 function formatDate(d:string){const dt=new Date(d);const diff=Date.now()-dt.getTime();const mins=Math.floor(diff/6e4);if(mins<1)return'刚刚';if(mins<60)return`${mins}分钟前`;const hrs=Math.floor(mins/60);if(hrs<24)return`${hrs}小时前`;const days=Math.floor(hrs/24);if(days<7)return`${days}天前`;return dt.toLocaleDateString('zh-CN',{month:'short',day:'numeric'})}
 function daysUntil(mmdd:string){const now=new Date();const [m,d]=mmdd.split('-').map(Number);const t=new Date(now.getFullYear(),m-1,d);if(t<now)t.setFullYear(t.getFullYear()+1);return Math.ceil((t.getTime()-now.getTime())/864e5)}
 function readImage(file: File): Promise<string> { return new Promise((resolve)=>{const r=new FileReader();r.onload=()=>resolve(r.result as string);r.readAsDataURL(file)}) }
@@ -144,8 +143,6 @@ export function RelationsPage() {
   const imgRef=useRef<HTMLInputElement>(null)
 
   const cat=CATEGORIES.find(c=>c.key===tab)!; const people=data[tab]
-  const person=useMemo(()=>people.find(p=>p.id===selectedPerson)||null,[people,selectedPerson])
-
   const savePerson=useCallback((p:Person)=>{setData(prev=>{const np=prev[tab];const idx=np.findIndex(x=>x.id===p.id);const nn=idx>=0?np.map(x=>x.id===p.id?p:x):[...np,p];const next={...prev,[tab]:nn};saveData(next);return next});setShowPersonForm(false);setEditingPerson(null);setSelectedPerson(p.id)},[tab])
   const deletePerson=useCallback((id:string)=>{setData(prev=>{const next={...prev,[tab]:prev[tab].filter(p=>p.id!==id)};saveData(next);return next});setSelectedPerson(null)},[tab])
   const saveReview=useCallback((pid:string,review:string)=>{setData(prev=>{const next={...prev,[tab]:prev[tab].map(p=>p.id===pid?{...p,review}:p)};saveData(next);return next});setReviewEdit(false)},[tab])
@@ -345,7 +342,7 @@ export function RelationsPage() {
           <div className="bg-white rounded-2xl p-6 w-full max-w-md mx-4 shadow-xl" onClick={e=>e.stopPropagation()} style={{maxHeight:'90vh',overflow:'auto'}}>
             <h3 className="text-sm font-semibold text-zinc-800 mb-4">{people.find(x=>x.id===editingPerson.id)?'编辑信息':`添加${cat.label}人物`}</h3>
             <div className="space-y-3">
-              <div><label className="text-[11px] text-zinc-500 mb-1 block">头像</label><div className="grid grid-cols-6 gap-1.5">{AVATARS.map(a=>(<button key={a.e} onClick={()=>setEditingPerson({...editingPerson,avatar:a.e})} className={`flex flex-col items-center gap-0.5 p-1.5 rounded-lg transition-all ${editingPerson.avatar===a.e?'ring-2 shadow-sm':'opacity-60 hover:opacity-100'}`} style={{ringColor:cat.color,background:editingPerson.avatar===a.e?cat.bg:'transparent'}}><span className="text-xl">{a.e}</span><span className="text-[8px]" style={{color:editingPerson.avatar===a.e?cat.color:'#a1a1aa'}}>{a.l}</span></button>))}</div></div>
+              <div><label className="text-[11px] text-zinc-500 mb-1 block">头像</label><div className="grid grid-cols-6 gap-1.5">{AVATARS.map(a=>(<button key={a.e} onClick={()=>setEditingPerson({...editingPerson,avatar:a.e})} className={`flex flex-col items-center gap-0.5 p-1.5 rounded-lg transition-all ${editingPerson.avatar===a.e?'ring-2 shadow-sm':'opacity-60 hover:opacity-100'}`} style={{boxShadow:editingPerson.avatar===a.e?`0 0 0 2px ${cat.color}`:'none',background:editingPerson.avatar===a.e?cat.bg:'transparent'}}><span className="text-xl">{a.e}</span><span className="text-[8px]" style={{color:editingPerson.avatar===a.e?cat.color:'#a1a1aa'}}>{a.l}</span></button>))}</div></div>
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div><label className="text-[11px] text-zinc-500 mb-1 block">姓名</label><input value={editingPerson.name} onChange={e=>setEditingPerson({...editingPerson,name:e.target.value})} className="w-full px-3 py-2 text-sm rounded-lg border border-zinc-200 focus:outline-none focus:border-zinc-300" placeholder="如：舅舅"/></div>
                 <div><label className="text-[11px] text-zinc-500 mb-1 block">关系</label><input value={editingPerson.relationship} onChange={e=>setEditingPerson({...editingPerson,relationship:e.target.value})} className="w-full px-3 py-2 text-sm rounded-lg border border-zinc-200 focus:outline-none focus:border-zinc-300" placeholder="如：舅舅"/></div>

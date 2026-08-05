@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useMemo } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 
 // ============================================================
 // Types & Data
@@ -331,7 +331,6 @@ export function PlansPage() {
   }, [plans])
 
   const todayPlan = plans[selectedDate]
-  const plan = todayPlan || { tasks: DAILY_TEMPLATES.map(t => ({ ...t })), notes: '' }
 
   const toggleTask = useCallback((taskId: number) => {
     setPlans(prev => {

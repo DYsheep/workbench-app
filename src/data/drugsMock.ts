@@ -9,6 +9,9 @@ export interface DrugInfo {
   name: string          // 药品名
   genericName: string   // 通用名
   category: string      // 分类
+  spec?: string         // 规格（mock 可缺省）
+  pzwh?: string         // 批准文号
+  manu?: string         // 生产厂家
   indications: string[] // 适应症
   dosage: string        // 用法用量（常用量/用法/每日最大剂量）
   maxDose: string       // 每日最大剂量（单独高亮）

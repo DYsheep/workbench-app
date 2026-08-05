@@ -52,7 +52,6 @@ function CandidateModal({ candidates, currentId, onSelect, onClose }: {
   onClose: () => void
 }) {
   const [query, setQuery] = useState('')
-  const [selected, setSelected] = useState(-1) // 键盘上下键索引
 
   // Esc 关闭
   useEffect(() => {

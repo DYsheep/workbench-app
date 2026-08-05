@@ -13,49 +13,47 @@ import { MicRhythmGame as RhythmOverlay } from './MicRhythmGame'
 //   But visually tines alternate: long-short-long-short from center
 // ============================================================
 export const TINES = [
-  // Left side (treble, shorter, left hand)
-  { id: 1,  num: '3°', note: 'D6', freq: 1174.66, label: '3°', side: 'left' as const, index: 0  },
-  { id: 2,  num: '1°', note: 'B5', freq: 987.77,  label: '1°', side: 'left' as const, index: 1  },
-  { id: 3,  num: '6°', note: 'G5', freq: 783.99,  label: '6°', side: 'left' as const, index: 2  },
-  { id: 4,  num: '4°', note: 'E5', freq: 659.25,  label: '4°', side: 'left' as const, index: 3  },
-  { id: 5,  num: '2°', note: 'C5', freq: 523.25,  label: '2°', side: 'left' as const, index: 4  },
-  { id: 6,  num: '7°', note: 'A4', freq: 440.00,  label: '7°', side: 'left' as const, index: 5  },
-  { id: 7,  num: '5°', note: 'F4', freq: 349.23,  label: '5°', side: 'left' as const, index: 6  },
-  { id: 8,  num: '3',  note: 'E4', freq: 329.63,  label: '3',  side: 'left' as const, index: 7  },
-  // Center tines
-  { id: 9,  num: '1',  note: 'D4', freq: 293.66,  label: '1',  side: 'center' as const, index: 8  },
-  // Right side (bass, longer, right hand)
-  { id: 10, num: '2',  note: 'C4', freq: 261.63,  label: '2',  side: 'right' as const, index: 9  },
-  { id: 11, num: '4',  note: 'B3', freq: 246.94,  label: '4',  side: 'right' as const, index: 10 },
-  { id: 12, num: '6',  note: 'A3', freq: 220.00,  label: '6',  side: 'right' as const, index: 11 },
-  { id: 13, num: '7',  note: 'G3', freq: 196.00,  label: '7',  side: 'right' as const, index: 12 },
-  { id: 14, num: '5',  note: 'F3', freq: 174.61,  label: '5',  side: 'right' as const, index: 13 },
-  { id: 15, num: '1.', note: 'E3', freq: 164.81,  label: '1.', side: 'right' as const, index: 14 },
-  { id: 16, num: '3.', note: 'D3', freq: 146.83,  label: '3.', side: 'right' as const, index: 15 },
-  { id: 17, num: '2.', note: 'C3', freq: 130.81,  label: '2.', side: 'right' as const, index: 16 },
+  // ===== 左 8（外→内，音由高到低） =====
+  { id: 17, num: '3°°', note: 'E6', freq: 1318.51, label: '3°°', side: 'left',  index: 0 },
+  { id: 15, num: '1°°', note: 'C6', freq: 1046.50, label: '1°°', side: 'left',  index: 1 },
+  { id: 13, num: '6°',  note: 'A5', freq: 880.00,  label: '6°',  side: 'left',  index: 2 },
+  { id: 11, num: '4°',  note: 'F5', freq: 698.46,  label: '4°',  side: 'left',  index: 3 },
+  { id: 9,  num: '2°',  note: 'D5', freq: 587.33,  label: '2°',  side: 'left',  index: 4 },
+  { id: 7,  num: '7',   note: 'B4', freq: 493.88,  label: '7',   side: 'left',  index: 5 },
+  { id: 5,  num: '5',   note: 'G4', freq: 392.00,  label: '5',   side: 'left',  index: 6 },
+  { id: 3,  num: '3',   note: 'E4', freq: 329.63,  label: '3',   side: 'left',  index: 7 },
+  // ===== 中央（最低音，最长键） =====
+  { id: 1,  num: '1',   note: 'C4', freq: 261.63,  label: '1',   side: 'center', index: 8 },
+  // ===== 右 8（内→外，音由低到高） =====
+  { id: 2,  num: '2',   note: 'D4', freq: 293.66,  label: '2',   side: 'right', index: 7 },
+  { id: 4,  num: '4',   note: 'F4', freq: 349.23,  label: '4',   side: 'right', index: 6 },
+  { id: 6,  num: '6',   note: 'A4', freq: 440.00,  label: '6',   side: 'right', index: 5 },
+  { id: 8,  num: '1°',  note: 'C5', freq: 523.25,  label: '1°',  side: 'right', index: 4 },
+  { id: 10, num: '3°',  note: 'E5', freq: 659.25,  label: '3°',  side: 'right', index: 3 },
+  { id: 12, num: '5°',  note: 'G5', freq: 783.99,  label: '5°',  side: 'right', index: 2 },
+  { id: 14, num: '7°',  note: 'B5', freq: 987.77,  label: '7°',  side: 'right', index: 1 },
+  { id: 16, num: '2°°', note: 'D6', freq: 1174.66, label: '2°°', side: 'right', index: 0 },
 ]
-
 // Typographic note mapping for tine labels
 export const LABEL_DETAILS: Record<string, { main: string; sub?: string }> = {
-  '3°': { main: '3', sub: '°' },
-  '1°': { main: '1', sub: '°' },
-  '6°': { main: '6', sub: '°' },
-  '4°': { main: '4', sub: '°' },
-  '2°': { main: '2', sub: '°' },
-  '7°': { main: '7', sub: '°' },
-  '5°': { main: '5', sub: '°' },
-  '3':  { main: '3' },
-  '1':  { main: '1' },
-  '2':  { main: '2' },
-  '4':  { main: '4' },
-  '6':  { main: '6' },
-  '7':  { main: '7' },
-  '5':  { main: '5' },
-  '1.': { main: '1', sub: '·' },
-  '3.': { main: '3', sub: '·' },
-  '2.': { main: '2', sub: '·' },
+  '3°°': { main: '3', sub: '°°' },
+  '1°°': { main: '1', sub: '°°' },
+  '2°°': { main: '2', sub: '°°' },
+  '7°':  { main: '7', sub: '°' },
+  '5°':  { main: '5', sub: '°' },
+  '3°':  { main: '3', sub: '°' },
+  '1°':  { main: '1', sub: '°' },
+  '6°':  { main: '6', sub: '°' },
+  '4°':  { main: '4', sub: '°' },
+  '2°':  { main: '2', sub: '°' },
+  '7':   { main: '7' },
+  '6':   { main: '6' },
+  '5':   { main: '5' },
+  '4':   { main: '4' },
+  '3':   { main: '3' },
+  '2':   { main: '2' },
+  '1':   { main: '1' },
 }
-
 // Tine length: longer in center, shorter on edges
 function tineLength(index: number): number {
   const center = 8
@@ -72,27 +70,26 @@ export const SONGS = [
     difficulty: 1,
     bpm: 80,
     notes: [
-      [1,1,1,1,1,1], [5,5,5,5,5,5], [6,6,6,6,6,6], [5,5,5,5,5,-1],
-      [4,4,4,4,4,4], [3,3,3,3,3,3], [2,2,2,2,2,2], [1,1,1,1,1,-1],
-      [5,5,5,5,5,5], [4,4,4,4,4,4], [3,3,3,3,3,3], [2,2,2,2,2,-1],
-      [5,5,5,5,5,5], [4,4,4,4,4,4], [3,3,3,3,3,3], [2,2,2,2,2,-1],
-      [1,1,1,1,1,1], [5,5,5,5,5,5], [6,6,6,6,6,6], [5,5,5,5,5,-1],
-      [4,4,4,4,4,4], [3,3,3,3,3,3], [2,2,2,2,2,2], [1,1,1,1,1,-1],
-    ].map((row, i) => ({ time: i * 1.5, notes: row })),
+      [1], [1], [5], [5], [6], [6], [5], [-1],
+      [4], [4], [3], [3], [2], [2], [1], [-1],
+      [5], [5], [4], [4], [3], [3], [2], [-1],
+      [5], [5], [4], [4], [3], [3], [2], [-1],
+      [1], [1], [5], [5], [6], [6], [5], [-1],
+      [4], [4], [3], [3], [2], [2], [1], [-1],
+    ].map((row, i) => ({ time: i * 0.75, notes: row })),
   },
   {
     title: '生日快乐',
     difficulty: 2,
     bpm: 90,
     notes: [
-      [5,5,-1,-1,-1,-1], [6,5,-1,-1,-1,-1], [1,5,-1,-1,-1,-1], [7,7,-1,-1,-1,-1],
-      [5,5,-1,-1,-1,-1], [6,5,-1,-1,-1,-1], [2,1,-1,-1,-1,-1], [1,1,-1,-1,-1,-1],
-      [5,5,-1,-1,-1,-1], [5,3,-1,-1,-1,-1], [1,1,7,7,-1,-1], [6,6,5,5,-1,-1],
-      [2,2,2,2,-1,-1], [1,1,-1,-1,-1,-1], [1,1,-1,-1,-1,-1], [-1,-1,-1,-1,-1,-1],
-    ].map((row, i) => ({ time: i * 1.2, notes: row })),
+      [5], [5], [6], [5], [8], [7],
+      [5], [5], [6], [5], [9], [8],
+      [5], [5], [12], [3], [8], [7], [6],
+      [4], [4], [3], [8], [9], [8],
+    ].map((row, i) => ({ time: i * 0.667, notes: row })),
   },
 ]
-
 // ============================================================
 // Web Audio
 // ============================================================

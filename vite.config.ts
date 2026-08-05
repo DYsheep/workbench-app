@@ -14,7 +14,7 @@ export default defineConfig({
     tailwindcss(),
     // PWA：四端通用（PC/Web/手机/平板浏览器访问 + 可安装全屏）
     VitePWA({
-      registerType: 'autoUpdate', // 发布新版本后自动更新 Service Worker
+      registerType: 'prompt', // 新版本提示用户刷新（手机上 autoUpdate 无感知，prompt 更可控）
       includeAssets: ['favicon.svg', 'icons.svg', 'apple-touch-icon.png'],
       manifest: {
         name: '个人工作台',
@@ -55,6 +55,10 @@ export default defineConfig({
   server: {
     host: '0.0.0.0',
     port: 5173,
+  },
+  optimizeDeps: {
+    // 虚拟模块无需预构建，排除后避免触发依赖重优化（规避沙箱对缓存清理的拦截）
+    exclude: ['virtual:pwa-register'],
   },
   build: {
     // 覆盖写入而非清空 dist（规避本地 safe-delete 沙箱限制；服务器部署时会先清空目标目录）

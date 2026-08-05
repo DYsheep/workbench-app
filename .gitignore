@@ -31,3 +31,4 @@ server/data/
 .env.local
 .env.production
 dev-dist
+fix_detail_pos.py

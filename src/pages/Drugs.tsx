@@ -11,6 +11,16 @@ import type { DrugInfo } from '../data/drugsMock'
 
 const HOT = ['阿莫西林', '布洛芬', '阿奇霉素', '二甲双胍', '氯雷他定']
 
+// 收藏项（服务器端快照，详情直接展示，不重复调用万维易源）
+interface Favorite {
+  drug_id: string
+  drug_name: string
+  manu: string
+  spec: string
+  detail: DrugInfo
+  created_at: string
+}
+
 // 折叠列表：默认显示前 N 条，超出可展开
 function CollapseList({ items, color, initial = 3 }: { items: string[]; color: string; initial?: number }) {
   const [expanded, setExpanded] = useState(false)
@@ -150,6 +160,46 @@ export function DrugsPage() {
   const [building, setBuilding] = useState(false)
   const [indexProgress, setIndexProgress] = useState('')
   const [candModal, setCandModal] = useState(false)
+  // 收藏
+  const [view, setView] = useState<'search' | 'favorites'>('search')
+  const [favorites, setFavorites] = useState<Favorite[]>([])
+  const [favFrom, setFavFrom] = useState(false) // 当前详情是否从收藏打开（显示返回按钮）
+
+  // 加载收藏列表
+  useEffect(() => {
+    fetch(`${API_BASE}/api/favorites`, { credentials: 'include' })
+      .then((res) => res.json())
+      .then((d) => { if (d.data) setFavorites(d.data) })
+      .catch(() => {})
+  }, [])
+
+  // 收藏 / 取消收藏（存服务器快照）
+  const toggleFav = async () => {
+    if (!drug) return
+    const isFav = favorites.some((f) => f.drug_id === drug.id)
+    try {
+      if (isFav) {
+        await fetch(`${API_BASE}/api/favorites/${encodeURIComponent(drug.id)}`, { method: 'DELETE', credentials: 'include' })
+        setFavorites((prev) => prev.filter((f) => f.drug_id !== drug.id))
+      } else {
+        await fetch(`${API_BASE}/api/favorites`, {
+          method: 'POST',
+          credentials: 'include',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ drug_id: drug.id, detail: drug }),
+        })
+        setFavorites((prev) => [{ drug_id: drug.id, drug_name: drug.name, manu: drug.manu || '', spec: drug.spec || '', detail: drug, created_at: '' }, ...prev])
+      }
+    } catch { /* 静默 */ }
+  }
+
+  // 从收藏打开详情（复用同一渲染块，效果与搜索一致）
+  const openFavDetail = (f: Favorite) => {
+    setDrug(f.detail)
+    setCandidates([])
+    setError('')
+    setFavFrom(true)
+  }
 
   const handleSearch = async (kw?: string) => {
     const q = kw || keyword
@@ -231,10 +281,77 @@ export function DrugsPage() {
   return (
     <div className="max-w-screen-2xl mx-auto w-full">
       <div className="flex items-center justify-between mb-6">
-        <h2 className="text-lg font-semibold text-zinc-800">门诊用药</h2>
+        <div className="flex items-center gap-3">
+          <h2 className="text-lg font-semibold text-zinc-800">门诊用药</h2>
+          {/* 视图切换：搜索 / 收藏 */}
+          <div className="flex bg-zinc-100 rounded-lg p-0.5">
+            <button
+              onClick={() => { setView('search'); setFavFrom(false) }}
+              className={`px-3 py-1 rounded-md text-xs font-medium transition-colors ${view === 'search' ? 'bg-white text-indigo-600 shadow-sm' : 'text-zinc-500 hover:text-zinc-700'}`}
+            >
+              搜索
+            </button>
+            <button
+              onClick={() => setView('favorites')}
+              className={`px-3 py-1 rounded-md text-xs font-medium transition-colors ${view === 'favorites' ? 'bg-white text-amber-600 shadow-sm' : 'text-zinc-500 hover:text-zinc-700'}`}
+            >
+              ★ 收藏{favorites.length > 0 && <span className="ml-1 text-[10px] text-zinc-400">({favorites.length})</span>}
+            </button>
+          </div>
+        </div>
         <span className="text-[10px] text-zinc-400">{usingMock ? '数据源：本地演示（后端不可达）' : '数据源：万维易源'}</span>
       </div>
 
+      {/* ===== 收藏视图 ===== */}
+      {view === 'favorites' && (
+        favFrom ? (
+          <div>
+            {/* 从收藏打开的详情：返回按钮（详情渲染在下方共用区） */}
+            <button
+              onClick={() => setFavFrom(false)}
+              className="text-xs text-zinc-500 hover:text-indigo-600 mb-3 flex items-center gap-1 transition-colors"
+            >
+              ‹ 返回收藏列表
+            </button>
+          </div>
+        ) : (
+          <div>
+            {favorites.length === 0 ? (
+              <div className="text-center py-16 bg-white rounded-xl border border-zinc-200">
+                <div className="text-3xl mb-3">☆</div>
+                <p className="text-sm text-zinc-500">还没有收藏药品</p>
+                <p className="text-xs text-zinc-400 mt-1">在搜索结果详情页点"☆ 收藏"，就会出现在这里</p>
+              </div>
+            ) : (
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3">
+                {favorites.map((f) => (
+                  <button
+                    key={f.drug_id}
+                    onClick={() => openFavDetail(f)}
+                    className="bg-white rounded-xl border border-zinc-200 p-4 text-left transition-all hover:shadow-md hover:-translate-y-0.5 hover:border-amber-200"
+                  >
+                    <div className="flex items-start justify-between gap-2">
+                      <div className="w-9 h-9 rounded-lg bg-amber-50 flex items-center justify-center text-lg shrink-0">💊</div>
+                      <span className="text-amber-400 text-sm shrink-0">★</span>
+                    </div>
+                    <p className="text-sm font-semibold text-zinc-800 mt-2.5 truncate">{f.drug_name}</p>
+                    {f.spec && <p className="text-[11px] text-cyan-700 mt-0.5 truncate">📦 {f.spec}</p>}
+                    {f.manu && <p className="text-[11px] text-zinc-400 mt-1 truncate">{f.manu}</p>}
+                    <div className="flex items-center justify-between mt-3 pt-2 border-t border-zinc-50">
+                      <span className="text-[10px] text-zinc-300">点击查看详情</span>
+                      <span className="text-indigo-400 text-xs">›</span>
+                    </div>
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+        )
+      )}
+
+      {/* ===== 搜索视图 ===== */}
+      {view === 'search' && (
+      <>
       {/* Search */}
       <div className="bg-white rounded-xl border border-zinc-200 p-4 mb-6">
         <div className="flex gap-3">
@@ -304,7 +421,8 @@ export function DrugsPage() {
         </div>
       )}
 
-      {drug && (
+      {/* ===== 详情区（搜索与收藏共用渲染，展示效果完全一致） ===== */}
+      {((view === 'search') || (view === 'favorites' && favFrom)) && drug && (
         <div>
           {/* ===== 头卡：元信息 + 警示条 ===== */}
           <div className="bg-white rounded-xl border border-zinc-200 p-5 mb-4">
@@ -315,6 +433,16 @@ export function DrugsPage() {
                   <h3 className="text-xl font-bold text-zinc-800">{drug.name}</h3>
                   {drug.spec && <span className="text-[11px] px-2 py-0.5 rounded-md bg-cyan-50 text-cyan-700 font-medium border border-cyan-100">📦 {drug.spec}</span>}
                   {drug.category && <span className="text-[10px] px-2 py-0.5 rounded-full bg-indigo-50 text-indigo-600 font-medium">{drug.category}</span>}
+                  <button
+                    onClick={toggleFav}
+                    className={`flex items-center gap-1 px-3 py-1.5 rounded-lg text-xs font-medium transition-colors shrink-0 ${
+                      favorites.some((f) => f.drug_id === drug.id)
+                        ? 'bg-amber-50 text-amber-600 border border-amber-200'
+                        : 'bg-zinc-50 text-zinc-500 border border-zinc-200 hover:bg-amber-50 hover:text-amber-600'
+                    }`}
+                  >
+                    {favorites.some((f) => f.drug_id === drug.id) ? '★ 已收藏' : '☆ 收藏'}
+                  </button>
                 </div>
                 <div className="flex flex-wrap gap-x-4 gap-y-1 mt-1.5 text-xs text-zinc-500">
                   {drug.genericName && <span>通用名：<span className="text-zinc-700">{drug.genericName}</span></span>}
@@ -456,6 +584,8 @@ export function DrugsPage() {
 
           <p className="text-center text-[10px] text-zinc-300 mb-4">— 数据来自万维易源药品数据库，实际用药请遵医嘱 —</p>
         </div>
+      )}
+      </>
       )}
     </div>
   )

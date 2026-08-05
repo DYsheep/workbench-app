@@ -105,6 +105,19 @@ db.exec(`
     PRIMARY KEY (user_id, date)
   );
 
+  -- ====== 药品收藏（服务器端快照，避免重复调用万维易源） ======
+  CREATE TABLE IF NOT EXISTS favorites (
+    id TEXT PRIMARY KEY,
+    user_id TEXT NOT NULL REFERENCES users(id),
+    drug_id TEXT NOT NULL,
+    drug_name TEXT NOT NULL,
+    manu TEXT DEFAULT '',
+    spec TEXT DEFAULT '',
+    detail TEXT NOT NULL,
+    created_at TEXT DEFAULT (datetime('now')),
+    UNIQUE(user_id, drug_id)
+  );
+
   -- ====== 拇指琴统计（服务器端存储） ======
   CREATE TABLE IF NOT EXISTS kalimba_stats (
     user_id TEXT PRIMARY KEY REFERENCES users(id),
@@ -611,6 +624,51 @@ async function handleRequest(req, res) {
          total_time = excluded.total_time, achievements = excluded.achievements,
          updated_at = datetime('now')`
     ).run(sess.user_id, Number(streak) || 0, lastDate || '', Number(totalTime) || 0, achJson)
+    return json(res, { ok: true })
+  }
+
+  // ====== FAVORITES（药品收藏 · 服务器端快照） ======
+  // GET /api/favorites → 收藏列表
+  if (pathname === '/api/favorites' && req.method === 'GET') {
+    const sess = requireAuth(req, res)
+    if (!sess) return
+    const rows = db.prepare(
+      'SELECT drug_id, drug_name, manu, spec, detail, created_at FROM favorites WHERE user_id = ? ORDER BY created_at DESC'
+    ).all(sess.user_id)
+    return json(res, {
+      data: rows.map((r) => ({ drug_id: r.drug_id, drug_name: r.drug_name, manu: r.manu, spec: r.spec, detail: JSON.parse(r.detail), created_at: r.created_at })),
+    })
+  }
+
+  // POST /api/favorites → 收藏（存完整详情快照）
+  if (pathname === '/api/favorites' && req.method === 'POST') {
+    const sess = requireAuth(req, res)
+    if (!sess) return
+    const { drug_id, detail } = await parseBody(req)
+    if (!drug_id || typeof drug_id !== 'string') return json(res, { error: '缺少 drug_id' }, 400)
+    if (!detail || typeof detail !== 'object') return json(res, { error: '缺少药品详情' }, 400)
+    db.prepare(
+      `INSERT INTO favorites (id, user_id, drug_id, drug_name, manu, spec, detail)
+       VALUES (?, ?, ?, ?, ?, ?, ?)
+       ON CONFLICT(user_id, drug_id) DO UPDATE SET detail = excluded.detail`
+    ).run(
+      `f_${crypto.randomUUID()}`,
+      sess.user_id,
+      drug_id,
+      detail.name || drug_id,
+      detail.manu || '',
+      detail.spec || '',
+      JSON.stringify(detail),
+    )
+    return json(res, { ok: true }, 201)
+  }
+
+  // DELETE /api/favorites/:drugId → 取消收藏
+  const favMatch = pathname.match(/^\/api\/favorites\/([^/]+)$/)
+  if (favMatch && req.method === 'DELETE') {
+    const sess = requireAuth(req, res)
+    if (!sess) return
+    db.prepare('DELETE FROM favorites WHERE user_id = ? AND drug_id = ?').run(sess.user_id, decodeURIComponent(favMatch[1]))
     return json(res, { ok: true })
   }
 

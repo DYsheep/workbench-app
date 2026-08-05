@@ -73,19 +73,45 @@ db.exec(`
     created_at TEXT DEFAULT (datetime('now')),
     updated_at TEXT DEFAULT (datetime('now'))
   );
-
-  CREATE TABLE IF NOT EXISTS drug_cache (
-    id TEXT PRIMARY KEY,
-    keyword TEXT UNIQUE NOT NULL,
-    title TEXT NOT NULL,
-    content TEXT NOT NULL,
-    source TEXT DEFAULT 'mock',
-    cached_at TEXT DEFAULT (datetime('now'))
-  );
 `)
 // 万维易源药品 API 索引表
 const drugApi = require('./drugs')
 drugApi.ensureIndexTable(db)
+
+// 清理废弃的 drug_cache 表（旧版 mock 缓存，搜索已走 drug_index）
+try {
+  db.exec('DROP TABLE IF EXISTS drug_cache')
+  console.log('[DB] Dropped legacy drug_cache table')
+} catch (e) {
+  console.error('[DB] Drop drug_cache failed:', e.message)
+}
+
+// ============================================================
+// Session 过期清理（TTL 7 天）
+// 惰性：requireAuth 校验时顺手删过期会话
+// 周期：启动时 + 每 6 小时批量清理
+// ============================================================
+const SESSION_TTL_MS = 7 * 24 * 60 * 60 * 1000 // 7 天
+
+function cleanupExpiredSessions() {
+  try {
+    const cutoff = new Date(Date.now() - SESSION_TTL_MS).toISOString()
+    const r = db.prepare('DELETE FROM sessions WHERE created_at < ?').run(cutoff)
+    if (r.changes > 0) console.log(`[Session] 清理过期会话 ${r.changes} 个`)
+  } catch (e) {
+    console.error('[Session] cleanup failed:', e.message)
+  }
+}
+
+function sessionIsExpired(row) {
+  if (!row || !row.created_at) return true
+  return Date.now() - new Date(row.created_at).getTime() > SESSION_TTL_MS
+}
+
+// 启动清理 + 周期清理
+cleanupExpiredSessions()
+setInterval(cleanupExpiredSessions, 6 * 60 * 60 * 1000)
+
 console.log('[DB] Tables ready')
 
 // ============================================================
@@ -120,17 +146,6 @@ if (userCount === 0) {
 
   console.log('[DB] Seed data inserted')
   console.log(`[DB] ⚠️  管理员账号: admin / 密码: ${adminPwd}  (请立即修改)`)
-
-  // Also seed drug cache
-  const seedDrugs = db.prepare('INSERT OR IGNORE INTO drug_cache (id, keyword, title, content) VALUES (?,?,?,?)')
-  const drugs = [
-    ['d1','阿莫西林','阿莫西林','【别名】阿莫仙、再林、阿莫灵\n【外文名】Amoxicillin\n【适应症】用于敏感菌（不产β内酰胺酶菌株）所致的呼吸道感染、泌尿生殖道感染、皮肤软组织感染等。\n【用量用法】成人一次0.5g，每6-8小时一次，一日剂量不超过4g。\n【注意事项】青霉素过敏者禁用。用前需做青霉素钠皮肤试验。\n【规格】胶囊：0.25g, 0.5g'],
-    ['d2','布洛芬','布洛芬','【别名】芬必得、美林、托恩\n【外文名】Ibuprofen\n【适应症】用于缓解轻至中度疼痛如头痛、关节痛、偏头痛、牙痛、肌肉痛、神经痛、痛经。也用于普通感冒或流行性感冒引起的发热。\n【用量用法】成人一次0.2-0.4g，每4-6小时一次。成人用药最大限量一般为每日2.4g。\n【注意事项】对阿司匹林过敏的哮喘患者禁用。活动期消化道溃疡者禁用。\n【规格】缓释胶囊：0.3g；片剂：0.1g, 0.2g'],
-    ['d3','阿奇霉素','阿奇霉素','【别名】希舒美、因培康、爱米琦、瑞奇、齐诺\n【外文名】Azithromycin\n【适应症】用于敏感细菌所引起的下列感染：中耳炎、鼻窦炎、咽炎、扁桃体炎等上呼吸道感染；支气管炎、肺炎等下呼吸道感染。\n【用量用法】成人：沙眼衣原体或敏感淋球菌所致性传播疾病，仅需单次口服本品1.0g。\n【注意事项】对阿奇霉素或其他大环内酯类抗生素过敏者禁用。\n【规格】片剂（胶囊）250mg, 500mg'],
-    ['d4','二甲双胍','二甲双胍','【别名】格华止、美迪康\n【外文名】Metformin\n【适应症】用于单纯饮食控制不满意的2型糖尿病病人，尤其是肥胖和伴高胰岛素血症者。\n【用量用法】成人开始一次0.25g，一日2-3次，以后根据疗效逐渐加量，一般每日量1-1.5g。\n【注意事项】肾功能不全者禁用。需定期监测肾功能。\n【规格】片剂：0.25g, 0.5g, 0.85g'],
-    ['d5','氯雷他定','氯雷他定','【别名】开瑞坦、百为坦\n【外文名】Loratadine\n【适应症】用于缓解过敏性鼻炎有关的症状，如喷嚏、流涕、鼻痒、鼻塞以及眼部痒及烧灼感。\n【用量用法】成人及12岁以上儿童：一日1次，一次1片（10mg）。\n【注意事项】严重肝功能不全者应减低剂量。\n【规格】片剂：10mg'],
-  ]
-  for (const d of drugs) seedDrugs.run(...d)
 }
 
 // ============================================================
@@ -187,8 +202,14 @@ function getSession(req) {
 function requireAuth(req, res) {
   const sessionId = getSession(req)
   if (!sessionId) { json(res, { error: '未登录' }, 401); return null }
-  const row = db.prepare('SELECT user_id FROM sessions WHERE id = ?').get(sessionId)
+  const row = db.prepare('SELECT user_id, created_at FROM sessions WHERE id = ?').get(sessionId)
   if (!row) { json(res, { error: '会话过期' }, 401); return null }
+  // 惰性清理：过期会话当场删除
+  if (sessionIsExpired(row)) {
+    db.prepare('DELETE FROM sessions WHERE id = ?').run(sessionId)
+    json(res, { error: '会话过期，请重新登录' }, 401)
+    return null
+  }
   return row
 }
 
@@ -449,7 +470,7 @@ async function handleRequest(req, res) {
     return json(res, {
       wsCount: db.prepare('SELECT COUNT(*) as c FROM workspaces').get().c,
       fileCount: db.prepare('SELECT COUNT(*) as c FROM files').get().c,
-      drugCount: db.prepare('SELECT COUNT(*) as c FROM drug_cache').get().c,
+      drugCount: db.prepare('SELECT COUNT(*) as c FROM drug_index').get().c,
     })
   }
 

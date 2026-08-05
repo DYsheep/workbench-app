@@ -123,7 +123,7 @@ export function DrugsPage() {
   }
 
   return (
-    <div className="max-w-4xl">
+    <div className="max-w-screen-2xl mx-auto w-full">
       <div className="flex items-center justify-between mb-6">
         <h2 className="text-lg font-semibold text-zinc-800">门诊用药</h2>
         <span className="text-[10px] text-zinc-400">{usingMock ? '数据源：本地演示（后端不可达）' : '数据源：万维易源'}</span>

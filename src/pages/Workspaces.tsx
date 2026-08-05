@@ -63,7 +63,7 @@ export function WorkspacesPage() {
   if (loading) return <div className="text-sm text-zinc-400 p-8">加载中...</div>
 
   return (
-    <div className="max-w-4xl">
+    <div className="max-w-screen-2xl mx-auto w-full">
       <div className="flex items-center justify-between mb-6">
         <h2 className="text-lg font-semibold text-zinc-800">工作区</h2>
         <button onClick={() => setShowCreate(true)} className="flex items-center gap-1.5 px-4 py-2 bg-indigo-600 text-white rounded-lg text-sm font-medium hover:bg-indigo-700 transition-colors">
@@ -117,7 +117,7 @@ export function WorkspacesPage() {
 
 export function WorkspaceDetailPage() {
   return (
-    <div className="max-w-4xl">
+    <div className="max-w-screen-2xl mx-auto w-full">
       <button onClick={() => window.history.back()} className="text-sm text-indigo-600 hover:text-indigo-700 mb-4 flex items-center gap-1">← 返回</button>
       <div className="bg-white rounded-xl border border-zinc-200 p-8 text-center">
         <Icon name="FolderOpen" size={40} className="mx-auto mb-3 text-zinc-300" />

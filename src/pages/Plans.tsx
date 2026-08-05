@@ -390,7 +390,7 @@ export function PlansPage() {
     }, 0)
 
   return (
-    <div className="max-w-4xl">
+    <div className="max-w-screen-2xl mx-auto w-full">
       <style>{CHECK_ANIM}{STRIKE_ANIM}{SPARK_ANIM}{BOUNCE_ANIM}{RING_ANIM}</style>
 
       {/* Header stats */}

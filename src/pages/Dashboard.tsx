@@ -102,12 +102,12 @@ export function DashboardPage() {
   }
 
   return (
-    <div className="max-w-4xl">
+    <div className="max-w-screen-2xl mx-auto w-full">
       <h2 className="text-lg font-semibold text-zinc-800 mb-6">仪表盘</h2>
 
       <TodayReminders />
 
-      <div className="grid grid-cols-3 gap-4 mb-8">
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-8">
         {stats.map((stat) => {
           const c = colorMap[stat.color]
           return (

@@ -41,7 +41,7 @@ export function FilesPage() {
   if (loading) return <div className="text-sm text-zinc-400 p-8">加载中...</div>
 
   return (
-    <div className="max-w-4xl">
+    <div className="max-w-screen-2xl mx-auto w-full">
       <div className="flex items-center justify-between mb-6">
         <h2 className="text-lg font-semibold text-zinc-800">文件管理</h2>
       </div>
@@ -51,7 +51,8 @@ export function FilesPage() {
         <input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="搜索文件..." className="w-full pl-10 pr-4 py-2.5 rounded-lg border border-zinc-300 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500" />
       </div>
 
-      <div className="bg-white rounded-xl border border-zinc-200 overflow-hidden">
+      <div className="bg-white rounded-xl border border-zinc-200 overflow-x-auto">
+        <div className="min-w-[560px]">
         <div className="px-5 py-3 bg-zinc-50 border-b border-zinc-100 text-xs font-medium text-zinc-500 grid grid-cols-12 gap-4">
           <span className="col-span-6">文件名</span>
           <span className="col-span-2">类型</span>
@@ -74,6 +75,7 @@ export function FilesPage() {
               <span className="col-span-2 text-xs text-zinc-400">{file.updated_at}</span>
             </div>
           ))}
+        </div>
         </div>
       </div>
 

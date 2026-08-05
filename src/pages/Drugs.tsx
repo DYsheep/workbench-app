@@ -52,6 +52,7 @@ export function DrugsPage() {
   const [needIndex, setNeedIndex] = useState(false)
   const [building, setBuilding] = useState(false)
   const [indexProgress, setIndexProgress] = useState('')
+  const [showAllCands, setShowAllCands] = useState(false)
 
   const handleSearch = async (kw?: string) => {
     const q = kw || keyword
@@ -60,6 +61,7 @@ export function DrugsPage() {
     setError('')
     setDrug(null)
     setCandidates([])
+    setShowAllCands(false)
     setNeedIndex(false)
     try {
       const res = await fetch(`${API_BASE}/api/drugs/search?q=${encodeURIComponent(q.trim())}`, { credentials: 'include' })
@@ -244,9 +246,21 @@ export function DrugsPage() {
           {/* ===== 同名候选切换 ===== */}
           {candidates.length > 1 && (
             <div className="bg-white rounded-xl border border-zinc-200 p-3 mb-4">
-              <p className="text-[10px] text-zinc-400 mb-2">同名药品（{candidates.length} 个，点击切换）</p>
+              <div className="flex items-center justify-between mb-2">
+                <p className="text-[10px] text-zinc-400">
+                  同名药品共 <span className="text-zinc-600 font-medium">{candidates.length}</span> 个（不同厂家/剂型，点击切换）
+                </p>
+                {candidates.length > 10 && (
+                  <button
+                    onClick={() => setShowAllCands(!showAllCands)}
+                    className="text-[10px] font-medium text-indigo-600 hover:text-indigo-700 shrink-0"
+                  >
+                    {showAllCands ? '▴ 收起' : `▾ 展开全部 ${candidates.length} 个`}
+                  </button>
+                )}
+              </div>
               <div className="flex gap-1.5 overflow-x-auto pb-0.5">
-                {candidates.map((c) => (
+                {(showAllCands ? candidates : candidates.slice(0, 10)).map((c) => (
                   <button
                     key={c.drug_id}
                     onClick={() => handleSelectCandidate(c)}

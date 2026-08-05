@@ -5,8 +5,6 @@ import { useState } from 'react'
 
 const NAV_ITEMS = [
   { to: '/', label: '仪表盘', icon: 'LayoutDashboard' as const },
-  { to: '/workspaces', label: '工作区', icon: 'FolderOpen' as const },
-  { to: '/files', label: '文件管理', icon: 'FileText' as const },
   { to: '/drugs', label: '门诊用药', icon: 'Pill' as const },
   { to: '/kalimba', label: '拇指琴', icon: 'Music' as const },
   { to: '/plans', label: '我的计划', icon: 'Calendar' as const },

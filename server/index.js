@@ -51,39 +51,19 @@ db.exec(`
     user_id TEXT NOT NULL REFERENCES users(id),
     created_at TEXT DEFAULT (datetime('now'))
   );
-
-  CREATE TABLE IF NOT EXISTS workspaces (
-    id TEXT PRIMARY KEY,
-    name TEXT NOT NULL,
-    description TEXT DEFAULT '',
-    member_count INTEGER DEFAULT 1,
-    file_count INTEGER DEFAULT 0,
-    color TEXT DEFAULT 'indigo',
-    owner_id TEXT REFERENCES users(id),
-    created_at TEXT DEFAULT (datetime('now')),
-    updated_at TEXT DEFAULT (datetime('now'))
-  );
-
-  CREATE TABLE IF NOT EXISTS files (
-    id TEXT PRIMARY KEY,
-    name TEXT NOT NULL,
-    type TEXT DEFAULT 'file',
-    size TEXT DEFAULT '0 KB',
-    workspace_id TEXT REFERENCES workspaces(id),
-    created_at TEXT DEFAULT (datetime('now')),
-    updated_at TEXT DEFAULT (datetime('now'))
-  );
 `)
 // 万维易源药品 API 索引表
 const drugApi = require('./drugs')
 drugApi.ensureIndexTable(db)
 
-// 清理废弃的 drug_cache 表（旧版 mock 缓存，搜索已走 drug_index）
+// 清理废弃表（drug_cache 旧 mock 缓存；workspaces/files 已删除模块）
 try {
   db.exec('DROP TABLE IF EXISTS drug_cache')
-  console.log('[DB] Dropped legacy drug_cache table')
+  db.exec('DROP TABLE IF EXISTS files')
+  db.exec('DROP TABLE IF EXISTS workspaces')
+  console.log('[DB] Dropped legacy tables (drug_cache / workspaces / files)')
 } catch (e) {
-  console.error('[DB] Drop drug_cache failed:', e.message)
+  console.error('[DB] Drop legacy tables failed:', e.message)
 }
 
 // ============================================================
@@ -124,25 +104,6 @@ if (userCount === 0) {
 
   db.prepare('INSERT INTO users (id, username, password_hash, name, role) VALUES (?, ?, ?, ?, ?)')
     .run('u1', 'admin', hash, '管理员', '管理员')
-
-  const insertWs = db.prepare(
-    'INSERT INTO workspaces (id, name, description, member_count, file_count, color, owner_id) VALUES (?,?,?,?,?,?,?)'
-  )
-  insertWs.run('w1', '会议室改造项目', '236、412、419等会议室智能化升级方案', 4, 16, 'indigo', 'u1')
-  insertWs.run('w2', '网络安全运维', '防火墙策略与邮件系统日常管理', 3, 32, 'emerald', 'u1')
-  insertWs.run('w3', '文档处理外包', '2022-2025年供应商管理与竞品分析', 5, 24, 'amber', 'u1')
-  insertWs.run('w4', '摄影作品管理', '个人摄影网站开发与相册管理', 1, 8, 'rose', 'u1')
-  insertWs.run('w5', 'SillyTavern 学习', 'AI 角色扮演聊天工具部署与使用', 1, 3, 'violet', 'u1')
-
-  const insertFile = db.prepare('INSERT INTO files (id, name, type, size, workspace_id) VALUES (?,?,?,?,?)')
-  insertFile.run('f1', '会议室改造设备清单.xlsx', 'xlsx', '245 KB', 'w1')
-  insertFile.run('f2', '网络安全巡检报告.docx', 'docx', '1.2 MB', 'w2')
-  insertFile.run('f3', '供应商评估表.xlsx', 'xlsx', '890 KB', 'w3')
-  insertFile.run('f4', '摄影相册数据库设计.md', 'md', '12 KB', 'w4')
-  insertFile.run('f5', 'SillyTavern 配置指南.pdf', 'pdf', '3.5 MB', 'w5')
-  insertFile.run('f6', '邮件服务器排查记录.txt', 'txt', '8 KB', 'w2')
-  insertFile.run('f7', '竞品分析-科大讯飞.docx', 'docx', '560 KB', 'w3')
-  insertFile.run('f8', '工作台架构设计方案.md', 'md', '34 KB', 'w3')
 
   console.log('[DB] Seed data inserted')
   console.log(`[DB] ⚠️  管理员账号: admin / 密码: ${adminPwd}  (请立即修改)`)
@@ -314,61 +275,6 @@ async function handleRequest(req, res) {
     return json(res, { ok: true })
   }
 
-  // ====== WORKSPACES ======
-  if (pathname === '/api/workspaces' && req.method === 'GET') {
-    const sess = requireAuth(req, res)
-    if (!sess) return
-    const rows = db.prepare('SELECT * FROM workspaces ORDER BY updated_at DESC').all()
-    return json(res, { data: rows })
-  }
-
-  if (pathname === '/api/workspaces' && req.method === 'POST') {
-    const sess = requireAuth(req, res)
-    if (!sess) return
-    const { name, description } = await parseBody(req)
-    if (!name || typeof name !== 'string' || name.trim().length === 0) {
-      return json(res, { error: '名称不能为空' }, 400)
-    }
-    const id = generateId()
-    const color = ['indigo','emerald','amber','rose','violet'][Math.floor(Math.random()*5)]
-    db.prepare('INSERT INTO workspaces (id,name,description,color,owner_id) VALUES (?,?,?,?,?)')
-      .run(id, name.trim(), (description||'').trim(), color, sess.user_id)
-    const ws = db.prepare('SELECT * FROM workspaces WHERE id = ?').get(id)
-    return json(res, { data: ws }, 201)
-  }
-
-  if (pathname.startsWith('/api/workspaces/') && req.method === 'DELETE') {
-    const sess = requireAuth(req, res)
-    if (!sess) return
-    const wsId = pathname.split('/')[3]
-    db.prepare('DELETE FROM workspaces WHERE id = ?').run(wsId)
-    return json(res, { ok: true })
-  }
-
-  if (pathname.startsWith('/api/workspaces/') && req.method === 'GET') {
-    const sess = requireAuth(req, res)
-    if (!sess) return
-    const wsId = pathname.split('/')[3]
-    const ws = db.prepare('SELECT * FROM workspaces WHERE id = ?').get(wsId)
-    if (!ws) return json(res, { error: '未找到' }, 404)
-    const files = db.prepare('SELECT * FROM files WHERE workspace_id = ?').all(wsId)
-    return json(res, { data: { ...ws, files } })
-  }
-
-  // ====== FILES ======
-  if (pathname === '/api/files' && req.method === 'GET') {
-    const sess = requireAuth(req, res)
-    if (!sess) return
-    const q = parseQuery(url)
-    let rows
-    if (q.search && typeof q.search === 'string') {
-      rows = db.prepare('SELECT * FROM files WHERE name LIKE ?').all(`%${q.search}%`)
-    } else {
-      rows = db.prepare('SELECT * FROM files ORDER BY updated_at DESC').all()
-    }
-    return json(res, { data: rows })
-  }
-
   // ====== DRUGS (万维易源) ======
   // GET /api/drugs/search?q=xxx → 本地索引候选 + 第一个候选详情
   if (pathname === '/api/drugs/search' && req.method === 'GET') {
@@ -468,8 +374,6 @@ async function handleRequest(req, res) {
     const sess = requireAuth(req, res)
     if (!sess) return
     return json(res, {
-      wsCount: db.prepare('SELECT COUNT(*) as c FROM workspaces').get().c,
-      fileCount: db.prepare('SELECT COUNT(*) as c FROM files').get().c,
       drugCount: db.prepare('SELECT COUNT(*) as c FROM drug_index').get().c,
     })
   }

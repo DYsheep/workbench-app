@@ -3,8 +3,6 @@ import { AuthProvider, useAuth } from './store/auth'
 import { AppLayout } from './components/AppLayout'
 import { LoginPage } from './pages/Login'
 import { DashboardPage } from './pages/Dashboard'
-import { WorkspacesPage, WorkspaceDetailPage } from './pages/Workspaces'
-import { FilesPage } from './pages/Files'
 import { DrugsPage } from './pages/Drugs'
 import { KalimbaPage } from './pages/Kalimba'
 import { PlansPage } from './pages/Plans'
@@ -34,9 +32,6 @@ export default function App() {
           <Route path="/login" element={<GuestRoute><LoginPage /></GuestRoute>} />
           <Route element={<ProtectedRoute><AppLayout /></ProtectedRoute>}>
             <Route path="/" element={<DashboardPage />} />
-            <Route path="/workspaces" element={<WorkspacesPage />} />
-            <Route path="/workspaces/:id" element={<WorkspaceDetailPage />} />
-            <Route path="/files" element={<FilesPage />} />
             <Route path="/drugs" element={<DrugsPage />} />
             <Route path="/kalimba" element={<KalimbaPage />} />
             <Route path="/plans" element={<PlansPage />} />

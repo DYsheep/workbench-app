@@ -1,6 +1,4 @@
-import { useState, useEffect } from 'react'
 import { Icon } from '../components/icons'
-import { API_BASE } from '../store/auth'
 import { Link } from 'react-router-dom'
 
 // Quick check for today's reminders
@@ -56,98 +54,36 @@ function TodayReminders() {
   )
 }
 
-interface Workspace {
-  id: string
-  name: string
-  description: string
-  member_count: number
-  file_count: number
-  updated_at: string
-  color: string
-}
-
-const colorClasses: Record<string, { bg: string; dot: string; icon: string }> = {
-  indigo: { bg: 'bg-indigo-50 border-indigo-200', dot: 'bg-indigo-500', icon: 'bg-indigo-100 text-indigo-600' },
-  emerald: { bg: 'bg-emerald-50 border-emerald-200', dot: 'bg-emerald-500', icon: 'bg-emerald-100 text-emerald-600' },
-  amber: { bg: 'bg-amber-50 border-amber-200', dot: 'bg-amber-500', icon: 'bg-amber-100 text-amber-600' },
-  rose: { bg: 'bg-rose-50 border-rose-200', dot: 'bg-rose-500', icon: 'bg-rose-100 text-rose-600' },
-  violet: { bg: 'bg-violet-50 border-violet-200', dot: 'bg-violet-500', icon: 'bg-violet-100 text-violet-600' },
-}
+// 模块快捷入口
+const MODULES: { to: string; icon: string; label: string; desc: string; bg: string; iconBg: string }[] = [
+  { to: '/drugs', icon: 'Pill', label: '门诊用药', desc: '药品查询与说明书', bg: 'bg-indigo-50 border-indigo-200', iconBg: 'bg-indigo-100 text-indigo-600' },
+  { to: '/kalimba', icon: 'Music', label: '拇指琴', desc: '练习与成就打卡', bg: 'bg-emerald-50 border-emerald-200', iconBg: 'bg-emerald-100 text-emerald-600' },
+  { to: '/plans', icon: 'Calendar', label: '我的计划', desc: '每日任务与打卡', bg: 'bg-amber-50 border-amber-200', iconBg: 'bg-amber-100 text-amber-600' },
+  { to: '/relations', icon: 'Heart', label: '关系梳理', desc: '家人朋友生日提醒', bg: 'bg-rose-50 border-rose-200', iconBg: 'bg-rose-100 text-rose-600' },
+]
 
 export function DashboardPage() {
-  const [workspaces, setWorkspaces] = useState<Workspace[]>([])
-  const [loading, setLoading] = useState(true)
-
-  useEffect(() => {
-    fetch(`${API_BASE}/api/workspaces`, { credentials: 'include' })
-      .then((r) => r.json())
-      .then((d) => { setWorkspaces(d.data || []); setLoading(false) })
-      .catch(() => setLoading(false))
-  }, [])
-
-  const stats = [
-    { label: '工作区', value: workspaces.length, icon: 'FolderOpen' as const, color: 'indigo' as const },
-    { label: '文件', value: workspaces.reduce((s,w) => s + (w.file_count||0), 0), icon: 'FileText' as const, color: 'emerald' as const },
-    { label: '活跃项目', value: workspaces.filter(w => w.member_count > 1).length, icon: 'Users' as const, color: 'amber' as const },
-  ]
-
-  const colorMap = {
-    indigo: { bg: 'bg-indigo-50', text: 'text-indigo-600', icon: 'text-indigo-500' },
-    emerald: { bg: 'bg-emerald-50', text: 'text-emerald-600', icon: 'text-emerald-500' },
-    amber: { bg: 'bg-amber-50', text: 'text-amber-600', icon: 'text-amber-500' },
-  }
-
-  if (loading) {
-    return <div className="text-sm text-zinc-400 p-8">加载中...</div>
-  }
-
   return (
     <div className="max-w-screen-2xl mx-auto w-full">
       <h2 className="text-lg font-semibold text-zinc-800 mb-6">仪表盘</h2>
 
       <TodayReminders />
 
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-8">
-        {stats.map((stat) => {
-          const c = colorMap[stat.color]
-          return (
-            <div key={stat.label} className="bg-white rounded-xl border border-zinc-200 p-4">
-              <div className="flex items-center justify-between mb-3">
-                <span className="text-sm text-zinc-500">{stat.label}</span>
-                <div className={`w-9 h-9 rounded-lg ${c.bg} flex items-center justify-center`}>
-                  <Icon name={stat.icon} size={18} className={c.icon} />
-                </div>
-              </div>
-              <p className={`text-2xl font-semibold ${c.text}`}>{stat.value}</p>
+      <p className="text-sm text-zinc-500 mb-3">快捷入口</p>
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+        {MODULES.map((m) => (
+          <Link
+            key={m.to}
+            to={m.to}
+            className={`bg-white rounded-xl border p-5 transition-all hover:shadow-sm hover:-translate-y-0.5 ${m.bg}`}
+          >
+            <div className={`w-10 h-10 rounded-lg flex items-center justify-center mb-3 ${m.iconBg}`}>
+              <Icon name={m.icon as any} size={20} />
             </div>
-          )
-        })}
-      </div>
-
-      <div className="bg-white rounded-xl border border-zinc-200">
-        <div className="px-5 py-4 border-b border-zinc-100">
-          <h3 className="text-sm font-semibold text-zinc-800">最近活动</h3>
-        </div>
-        <div className="divide-y divide-zinc-50">
-          {workspaces.slice(0, 8).map((ws) => {
-            const c = colorClasses[ws.color] || colorClasses.indigo
-            return (
-              <div key={ws.id} className="px-5 py-3.5 flex items-center gap-3 hover:bg-zinc-50">
-                <div className={`w-8 h-8 rounded-lg flex items-center justify-center shrink-0 ${c.icon}`}>
-                  <Icon name="FolderOpen" size={16} />
-                </div>
-                <div className="flex-1 min-w-0">
-                  <div className="flex items-center gap-2">
-                    <span className={`w-2 h-2 rounded-full ${c.dot}`} />
-                    <p className="text-sm text-zinc-800 truncate">{ws.name}</p>
-                  </div>
-                  <p className="text-xs text-zinc-400">{ws.updated_at}</p>
-                </div>
-                <span className="text-xs text-zinc-400">{ws.file_count || 0} 文件</span>
-              </div>
-            )
-          })}
-        </div>
+            <p className="text-sm font-semibold text-zinc-800">{m.label}</p>
+            <p className="text-xs text-zinc-500 mt-1">{m.desc}</p>
+          </Link>
+        ))}
       </div>
     </div>
   )

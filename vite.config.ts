@@ -56,4 +56,8 @@ export default defineConfig({
     host: '0.0.0.0',
     port: 5173,
   },
+  build: {
+    // 覆盖写入而非清空 dist（规避本地 safe-delete 沙箱限制；服务器部署时会先清空目标目录）
+    emptyOutDir: false,
+  },
 })

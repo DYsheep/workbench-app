@@ -30,3 +30,4 @@ server/data/
 .env
 .env.local
 .env.production
+dev-dist

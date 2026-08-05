@@ -1,4 +1,5 @@
-import { useState, useCallback, useRef } from 'react'
+import { useState, useCallback, useRef, useEffect } from 'react'
+import { API_BASE } from '../store/auth'
 
 type Category = 'family' | 'friendship' | 'love'
 
@@ -23,13 +24,17 @@ const AVATARS = [
   { e:'👦',l:'男孩' },{ e:'👧',l:'女孩' },{ e:'👶',l:'幼儿' },
 ]
 
-function loadData(): RelationData {
-  const empty: RelationData = { family:[], friendship:[], love:[] }
+// ============================================================
+// 数据层：服务器端存储（唯一真源），浏览器仅作离线缓存
+// ============================================================
+const EMPTY_DATA: RelationData = { family: [], friendship: [], love: [] }
+
+// 读取本地缓存（归一化旧格式，供降级/迁移使用）
+function loadLocalCache(): RelationData {
   try {
     const raw = localStorage.getItem(STORAGE_KEY)
     if (raw) {
       const d = JSON.parse(raw)
-      // Migrate from old format with posts, normalize person objects
       const normalize = (arr: any[]): Person[] => (arr || []).filter((p: any) => p && typeof p === 'object').map((p: any) => ({
         id: p.id || generateId(),
         name: p.name || '',
@@ -48,12 +53,52 @@ function loadData(): RelationData {
         love: normalize(d.love?.people || d.love),
       }
     }
-  } catch { return empty }
-  return empty
+  } catch { return EMPTY_DATA }
+  return EMPTY_DATA
 }
-function saveData(data: RelationData) {
-  try { localStorage.setItem(STORAGE_KEY, JSON.stringify(data)) }
-  catch { /* quota exceeded, silently ignore */ }
+
+function isEmptyData(d: RelationData) {
+  return !d || (['family', 'friendship', 'love'] as Category[]).every((k) => ((d as any)[k] || []).length === 0)
+}
+
+// 从服务器拉取全量数据
+async function fetchFromServer(): Promise<RelationData | null> {
+  try {
+    const res = await fetch(`${API_BASE}/api/relations`, { credentials: 'include' })
+    if (!res.ok) return null
+    const d = await res.json()
+    return d.data || null
+  } catch { return null }
+}
+
+// 全量同步到服务器（乐观更新：失败静默，下次变更重试）
+function syncToServer(data: RelationData) {
+  fetch(`${API_BASE}/api/relations`, {
+    method: 'PUT',
+    credentials: 'include',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ data }),
+  }).catch(() => { /* 离线时静默，本地缓存兜底 */ })
+}
+
+// base64 图片 → 上传服务器 → 返回访问路径
+async function uploadImage(base64: string): Promise<string> {
+  try {
+    const res = await fetch(`${API_BASE}/api/upload`, {
+      method: 'POST',
+      credentials: 'include',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name: 'diary', data: base64 }),
+    })
+    const d = await res.json()
+    return d.data?.path || base64
+  } catch { return base64 }
+}
+
+// 图片展示地址：路径 → 完整 URL（生产同域 /uploads，开发跨域加 API_BASE）
+function imageUrl(p: string) {
+  if (!p) return ''
+  return p.startsWith('data:') || p.startsWith('http') ? p : `${API_BASE}${p}`
 }
 function generateId() { return Date.now().toString(36)+Math.random().toString(36).slice(2,7) }
 function today() { return new Date().toISOString().slice(0,10) }
@@ -130,7 +175,8 @@ function BirthdayPicker({ value, onChange }: { value: string; onChange: (v: stri
 }
 
 export function RelationsPage() {
-  const [data,setData]=useState(loadData)
+  const [data,setData]=useState<RelationData>(EMPTY_DATA)
+  const [loaded,setLoaded]=useState(false)
   const [tab,setTab]=useState<Category>('family')
   const [selectedPerson,setSelectedPerson]=useState<string|null>(null)
   const [showPersonForm,setShowPersonForm]=useState(false)
@@ -142,14 +188,66 @@ export function RelationsPage() {
   const [reviewEdit,setReviewEdit]=useState(false);const [reviewDraft,setReviewDraft]=useState('')
   const imgRef=useRef<HTMLInputElement>(null)
 
+  // 初始加载：优先服务器；本地有旧数据且服务器为空 → 一次性迁移上收
+  useEffect(() => {
+    let cancelled = false
+    ;(async () => {
+      const server = await fetchFromServer()
+      if (cancelled) return
+      const local = loadLocalCache()
+      if (server && !isEmptyData(server)) {
+        // 服务器已接管：清除本地缓存（数据一致性，本地仅缓存）
+        localStorage.removeItem(STORAGE_KEY)
+        setData(server)
+      } else if (!isEmptyData(local)) {
+        // 迁移：本地 base64 图片 → 上传 → 全量 PUT → 清本地
+        try {
+          const migrated: RelationData = JSON.parse(JSON.stringify(local))
+          for (const cat of ['family', 'friendship', 'love'] as Category[]) {
+            for (const p of migrated[cat]) {
+              for (const d of p.diary) {
+                d.images = await Promise.all(d.images.map((img) =>
+                  img.startsWith('data:') ? uploadImage(img) : img
+                ))
+              }
+            }
+          }
+          syncToServer(migrated)
+          setData(migrated)
+          localStorage.removeItem(STORAGE_KEY)
+        } catch {
+          setData(local)
+        }
+      } else {
+        setData(server || local || EMPTY_DATA)
+      }
+      if (!cancelled) setLoaded(true)
+    })()
+    return () => { cancelled = true }
+  }, [])
+
   const cat=CATEGORIES.find(c=>c.key===tab)!; const people=data[tab]
-  const savePerson=useCallback((p:Person)=>{setData(prev=>{const np=prev[tab];const idx=np.findIndex(x=>x.id===p.id);const nn=idx>=0?np.map(x=>x.id===p.id?p:x):[...np,p];const next={...prev,[tab]:nn};saveData(next);return next});setShowPersonForm(false);setEditingPerson(null);setSelectedPerson(p.id)},[tab])
-  const deletePerson=useCallback((id:string)=>{setData(prev=>{const next={...prev,[tab]:prev[tab].filter(p=>p.id!==id)};saveData(next);return next});setSelectedPerson(null)},[tab])
-  const saveReview=useCallback((pid:string,review:string)=>{setData(prev=>{const next={...prev,[tab]:prev[tab].map(p=>p.id===pid?{...p,review}:p)};saveData(next);return next});setReviewEdit(false)},[tab])
-  const addDiary=useCallback((pid:string)=>{if(!diaryDraft.trim()&&diaryImgs.length===0)return;const e:DiaryEntry={id:generateId(),content:diaryDraft.trim(),images:diaryImgs,date:today()};setData(prev=>{const next={...prev,[tab]:prev[tab].map(p=>p.id===pid?{...p,diary:[e,...p.diary]}:p)};saveData(next);return next});setDiaryDraft('');setDiaryImgs([]);setDiaryOpen(false)},[tab,diaryDraft,diaryImgs])
-  const deleteDiary=useCallback((pid:string,eid:string)=>{setData(prev=>{const next={...prev,[tab]:prev[tab].map(p=>p.id===pid?{...p,diary:p.diary.filter(e=>e.id!==eid)}:p)};saveData(next);return next})},[tab])
+  const savePerson=useCallback((p:Person)=>{setData(prev=>{const np=prev[tab];const idx=np.findIndex(x=>x.id===p.id);const nn=idx>=0?np.map(x=>x.id===p.id?p:x):[...np,p];const next={...prev,[tab]:nn};syncToServer(next);return next});setShowPersonForm(false);setEditingPerson(null);setSelectedPerson(p.id)},[tab])
+  const deletePerson=useCallback((id:string)=>{setData(prev=>{const next={...prev,[tab]:prev[tab].filter(p=>p.id!==id)};syncToServer(next);return next});setSelectedPerson(null)},[tab])
+  const saveReview=useCallback((pid:string,review:string)=>{setData(prev=>{const next={...prev,[tab]:prev[tab].map(p=>p.id===pid?{...p,review}:p)};syncToServer(next);return next});setReviewEdit(false)},[tab])
+  const addDiary=useCallback(async (pid:string)=>{
+    if(!diaryDraft.trim()&&diaryImgs.length===0)return
+    // 新选图片(base64)先上传服务器，取回路径
+    let imgs=diaryImgs
+    if(imgs.some(i=>i.startsWith('data:'))){
+      imgs=await Promise.all(imgs.map(i=>i.startsWith('data:')?uploadImage(i):i))
+    }
+    const e:DiaryEntry={id:generateId(),content:diaryDraft.trim(),images:imgs,date:today()}
+    setData(prev=>{const next={...prev,[tab]:prev[tab].map(p=>p.id===pid?{...p,diary:[e,...p.diary]}:p)};syncToServer(next);return next})
+    setDiaryDraft('');setDiaryImgs([]);setDiaryOpen(false)
+  },[tab,diaryDraft,diaryImgs])
+  const deleteDiary=useCallback((pid:string,eid:string)=>{setData(prev=>{const next={...prev,[tab]:prev[tab].map(p=>p.id===pid?{...p,diary:p.diary.filter(e=>e.id!==eid)}:p)};syncToServer(next);return next})},[tab])
   const openNewPerson=()=>{setEditingPerson({id:generateId(),name:'',avatar:AVATARS[Math.floor(Math.random()*AVATARS.length)].e,relationship:'',birthday:'',phone:'',notes:'',review:'',diary:[],lastBirthdayGreeted:''});setShowPersonForm(true)}
   const openEditPerson=(p:Person)=>{setEditingPerson({...p});setShowPersonForm(true)}
+
+  if (!loaded) {
+    return <div className="max-w-screen-2xl mx-auto w-full"><p className="text-sm text-zinc-400 p-8">正在加载关系数据...</p></div>
+  }
 
   return (
     <div className="max-w-screen-2xl mx-auto w-full">
@@ -285,7 +383,7 @@ export function RelationsPage() {
                             {/* Cover image or gradient placeholder */}
                             {cover ? (
                               <div className="relative">
-                                <img src={cover} className="w-full object-cover" style={{height:120}} alt=""/>
+                                <img src={imageUrl(cover)} className="w-full object-cover" style={{height:120}} alt=""/>
                                 <div className="absolute inset-0 bg-gradient-to-t from-black/50 to-transparent" />
                                 <span className="absolute top-2 right-2 text-[9px] bg-white/90 text-zinc-600 px-1.5 py-0.5 rounded-md">{e.date.slice(5)}</span>
                                 {hasContent&&<p className="absolute bottom-2 left-3 right-3 text-[11px] text-white font-medium line-clamp-1 drop-shadow-sm">{e.content.slice(0,40)}</p>}
@@ -315,7 +413,7 @@ export function RelationsPage() {
                                 {cover&&hasContent&&<p className="text-xs text-zinc-600 leading-relaxed whitespace-pre-wrap mb-2">{e.content}</p>}
                                 {imgs.length>1&&(
                                   <div className="flex gap-1.5 flex-wrap">
-                                    {imgs.map((img,i)=>(<img key={i} src={img} className="rounded-md cursor-pointer hover:opacity-90 transition-opacity" style={{width:56,height:56,objectFit:'cover'}} alt="" onClick={()=>setPreviewImg(img)}/>))}
+                                    {imgs.map((img,i)=>(<img key={i} src={imageUrl(img)} className="rounded-md cursor-pointer hover:opacity-90 transition-opacity" style={{width:56,height:56,objectFit:'cover'}} alt="" onClick={()=>setPreviewImg(img)}/>))}
                                   </div>
                                 )}
                               </div>
@@ -357,7 +455,7 @@ export function RelationsPage() {
           </div>
         </div>
       )}
-      {previewImg&&<div className="img-preview-overlay" onClick={()=>setPreviewImg(null)}><img src={previewImg} alt=""/></div>}
+      {previewImg&&<div className="img-preview-overlay" onClick={()=>setPreviewImg(null)}><img src={imageUrl(previewImg)} alt=""/></div>}
     </div>
   )
 }

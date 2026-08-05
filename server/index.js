@@ -14,6 +14,14 @@ const NODE_ENV = process.env.NODE_ENV || 'development'
 const CORS_ORIGINS = (process.env.CORS_ORIGINS || 'http://localhost:5173').split(',').map(s => s.trim())
 const BCRYPT_ROUNDS = 12
 
+// 图片上传目录（服务器磁盘，数据库只存路径）
+const UPLOAD_DIR = path.join(__dirname, 'uploads')
+try {
+  if (!fs.existsSync(UPLOAD_DIR)) fs.mkdirSync(UPLOAD_DIR, { recursive: true })
+} catch (e) {
+  console.error('[Upload] mkdir failed:', e.message)
+}
+
 // ============================================================
 // Database setup
 // ============================================================
@@ -51,6 +59,41 @@ db.exec(`
     user_id TEXT NOT NULL REFERENCES users(id),
     created_at TEXT DEFAULT (datetime('now'))
   );
+
+  -- ====== 关系梳理（服务器端存储） ======
+  CREATE TABLE IF NOT EXISTS relations (
+    id TEXT PRIMARY KEY,
+    user_id TEXT NOT NULL REFERENCES users(id),
+    category TEXT NOT NULL,
+    name TEXT NOT NULL,
+    avatar TEXT DEFAULT '👤',
+    relationship TEXT DEFAULT '',
+    birthday TEXT DEFAULT '',
+    phone TEXT DEFAULT '',
+    notes TEXT DEFAULT '',
+    review TEXT DEFAULT '',
+    last_birthday_greeted TEXT DEFAULT '',
+    created_at TEXT DEFAULT (datetime('now')),
+    updated_at TEXT DEFAULT (datetime('now'))
+  );
+  CREATE INDEX IF NOT EXISTS idx_relations_user ON relations(user_id, category);
+
+  CREATE TABLE IF NOT EXISTS relation_diaries (
+    id TEXT PRIMARY KEY,
+    person_id TEXT NOT NULL REFERENCES relations(id) ON DELETE CASCADE,
+    content TEXT NOT NULL,
+    date TEXT DEFAULT (date('now')),
+    created_at TEXT DEFAULT (datetime('now'))
+  );
+  CREATE INDEX IF NOT EXISTS idx_diaries_person ON relation_diaries(person_id);
+
+  CREATE TABLE IF NOT EXISTS diary_images (
+    id TEXT PRIMARY KEY,
+    diary_id TEXT NOT NULL REFERENCES relation_diaries(id) ON DELETE CASCADE,
+    path TEXT NOT NULL,
+    created_at TEXT DEFAULT (datetime('now'))
+  );
+  CREATE INDEX IF NOT EXISTS idx_diary_images ON diary_images(diary_id);
 `)
 // 万维易源药品 API 索引表
 const drugApi = require('./drugs')
@@ -367,6 +410,126 @@ async function handleRequest(req, res) {
     } catch (e) {
       return json(res, { data: null, message: e.message }, 502)
     }
+  }
+
+  // ====== RELATIONS（关系梳理 · 服务器端存储） ======
+  // GET /api/relations → 当前用户全量数据 { family, friendship, love }
+  if (pathname === '/api/relations' && req.method === 'GET') {
+    const sess = requireAuth(req, res)
+    if (!sess) return
+    const people = db.prepare(
+      'SELECT * FROM relations WHERE user_id = ? ORDER BY created_at'
+    ).all(sess.user_id)
+    const diaries = db.prepare(
+      'SELECT d.*, di.path as image_path FROM relation_diaries d LEFT JOIN diary_images di ON di.diary_id = d.id ORDER BY d.created_at'
+    ).all()
+    const byDiary = {}
+    for (const row of db.prepare('SELECT diary_id, path FROM diary_images').all()) {
+      ;(byDiary[row.diary_id] ||= []).push(row.path)
+    }
+    const data = { family: [], friendship: [], love: [] }
+    for (const p of people) {
+      const pDiaries = diaries.filter((d) => d.person_id === p.id).map((d) => ({
+        id: d.id, content: d.content, date: d.date, images: byDiary[d.id] || [],
+      }))
+      data[p.category].push({
+        id: p.id, name: p.name, avatar: p.avatar, relationship: p.relationship,
+        birthday: p.birthday, phone: p.phone, notes: p.notes, review: p.review,
+        diary: pDiaries, lastBirthdayGreeted: p.last_birthday_greeted,
+      })
+    }
+    return json(res, { data })
+  }
+
+  // PUT /api/relations → 全量同步（事务替换当前用户数据，清理孤儿记录与图片文件）
+  if (pathname === '/api/relations' && req.method === 'PUT') {
+    const sess = requireAuth(req, res)
+    if (!sess) return
+    const body = await parseBody(req)
+    const input = body.data || {}
+    const tx = db.transaction(() => {
+      // 收集旧图片路径（删除后清理磁盘文件）
+      const oldImages = (db.prepare(
+        'SELECT path FROM diary_images WHERE diary_id IN (SELECT id FROM relation_diaries WHERE person_id IN (SELECT id FROM relations WHERE user_id = ?))'
+      ).all(sess.user_id)).map((r) => r.path)
+      db.prepare('DELETE FROM relations WHERE user_id = ?').run(sess.user_id)
+      const insertPerson = db.prepare(
+        `INSERT INTO relations (id, user_id, category, name, avatar, relationship, birthday, phone, notes, review, last_birthday_greeted)
+         VALUES (?,?,?,?,?,?,?,?,?,?,?)`
+      )
+      const insertDiary = db.prepare(
+        'INSERT INTO relation_diaries (id, person_id, content, date) VALUES (?,?,?,?)'
+      )
+      const insertImage = db.prepare(
+        'INSERT INTO diary_images (id, diary_id, path) VALUES (?,?,?)'
+      )
+      const usedPaths = new Set()
+      for (const cat of ['family', 'friendship', 'love']) {
+        for (const p of input[cat] || []) {
+          const pid = p.id || `r_${crypto.randomUUID()}`
+          insertPerson.run(pid, sess.user_id, cat, p.name || '', p.avatar || '👤', p.relationship || '',
+            p.birthday || '', p.phone || '', p.notes || '', p.review || '', p.lastBirthdayGreeted || '')
+          for (const d of p.diary || []) {
+            const did = d.id || `d_${crypto.randomUUID()}`
+            insertDiary.run(did, pid, d.content || '', d.date || new Date().toISOString().slice(0, 10))
+            for (const img of d.images || []) {
+              if (typeof img === 'string' && img.startsWith('/uploads/')) {
+                insertImage.run(`i_${crypto.randomUUID()}`, did, img)
+                usedPaths.add(img)
+              }
+            }
+          }
+        }
+      }
+      return { oldImages, usedPaths }
+    })
+    const { oldImages, usedPaths } = tx()
+    // 清理不再引用的图片文件
+    for (const img of oldImages) {
+      if (!usedPaths.has(img)) {
+        const file = path.join(UPLOAD_DIR, path.basename(img))
+        try { fs.unlinkSync(file) } catch { /* 文件可能已不存在 */ }
+      }
+    }
+    return json(res, { ok: true })
+  }
+
+  // POST /api/upload → base64 图片落盘 uploads/，返回访问路径
+  if (pathname === '/api/upload' && req.method === 'POST') {
+    const sess = requireAuth(req, res)
+    if (!sess) return
+    const { data, name } = await parseBody(req)
+    if (!data || typeof data !== 'string') return json(res, { error: '缺少图片数据' }, 400)
+    const m = data.match(/^data:(image\/[\w+-.]+);base64,(.+)$/)
+    if (!m) return json(res, { error: '图片格式不正确' }, 400)
+    const extMap = { 'image/jpeg': 'jpg', 'image/png': 'png', 'image/webp': 'webp', 'image/gif': 'gif' }
+    const ext = extMap[m[1]] || 'jpg'
+    const filename = `${Date.now()}_${crypto.randomBytes(4).toString('hex')}.${ext}`
+    try {
+      fs.writeFileSync(path.join(UPLOAD_DIR, filename), Buffer.from(m[2], 'base64'))
+    } catch (e) {
+      return json(res, { error: '图片保存失败' }, 500)
+    }
+    return json(res, { data: { path: `/uploads/${filename}`, name: name || '' } }, 201)
+  }
+
+  // GET /uploads/:file → 静态服务上传图片
+  const uploadMatch = pathname.match(/^\/uploads\/([\w.-]+)$/)
+  if (uploadMatch && req.method === 'GET') {
+    const file = path.join(UPLOAD_DIR, uploadMatch[1])
+    try {
+      const buf = fs.readFileSync(file)
+      const ext = path.extname(file).toLowerCase()
+      const typeMap = { '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', '.png': 'image/png', '.webp': 'image/webp', '.gif': 'image/gif' }
+      res.writeHead(200, {
+        'Content-Type': typeMap[ext] || 'application/octet-stream',
+        'Cache-Control': 'public, max-age=86400',
+      })
+      res.end(buf)
+    } catch {
+      json(res, { error: 'Not found' }, 404)
+    }
+    return
   }
 
   // ====== STATS ======

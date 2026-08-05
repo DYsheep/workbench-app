@@ -65,6 +65,13 @@ server {
         try_files \$uri \$uri/ /index.html;
     }
 
+    # 关系梳理图片（服务器磁盘 uploads/）
+    location /uploads/ {
+        alias /opt/workbench-app/server/uploads/;
+        expires 30d;
+        add_header Cache-Control "public, immutable";
+    }
+
     # 后端 API 反向代理
     location /api/ {
         proxy_pass http://127.0.0.1:3001;

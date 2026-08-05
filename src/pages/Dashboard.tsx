@@ -1,33 +1,37 @@
+import { useState, useEffect } from 'react'
 import { Icon } from '../components/icons'
 import { Link } from 'react-router-dom'
-
-// Quick check for today's reminders
-function getTodayReminders(): { type: 'birthday'; name: string; relation: string }[] {
-  try {
-    const raw = localStorage.getItem('wb_relations_v3')
-    if (!raw) return []
-    const data = JSON.parse(raw)
-    const allPeople: any[] = []
-    for (const cat of ['family','friendship','love']) {
-      const catData = data[cat]
-      if (Array.isArray(catData)) allPeople.push(...catData)
-      else if (catData?.people) allPeople.push(...catData.people)
-    }
-    const today = new Date()
-    const mmdd = `${String(today.getMonth()+1).padStart(2,'0')}-${String(today.getDate()).padStart(2,'0')}`
-    const reminders: ReturnType<typeof getTodayReminders> = []
-
-    for (const p of allPeople) {
-      if (p.birthday === mmdd) {
-        reminders.push({ type: 'birthday', name: p.name, relation: p.relationship })
-      }
-    }
-    return reminders
-  } catch { return [] }
-}
+import { API_BASE } from '../store/auth'
 
 function TodayReminders() {
-  const reminders = getTodayReminders()
+  const [reminders, setReminders] = useState<{ type: 'birthday'; name: string; relation: string }[]>([])
+
+  // 从服务器读取关系数据（数据一致性：本地仅缓存，不再作为数据源）
+  useEffect(() => {
+    let cancelled = false
+    ;(async () => {
+      try {
+        const res = await fetch(`${API_BASE}/api/relations`, { credentials: 'include' })
+        if (!res.ok) return
+        const d = await res.json()
+        const data = d.data || {}
+        const allPeople: any[] = []
+        for (const cat of ['family','friendship','love']) {
+          const catData = data[cat]
+          if (Array.isArray(catData)) allPeople.push(...catData)
+          else if (catData?.people) allPeople.push(...catData.people)
+        }
+        const today = new Date()
+        const mmdd = `${String(today.getMonth()+1).padStart(2,'0')}-${String(today.getDate()).padStart(2,'0')}`
+        const found = allPeople
+          .filter((p) => p.birthday === mmdd)
+          .map((p) => ({ type: 'birthday' as const, name: p.name, relation: p.relationship }))
+        if (!cancelled) setReminders(found)
+      } catch { /* 服务器不可达则不显示提醒 */ }
+    })()
+    return () => { cancelled = true }
+  }, [])
+
   if (reminders.length === 0) return null
   return (
     <div className="mb-6">

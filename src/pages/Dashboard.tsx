@@ -48,7 +48,6 @@ function TodayReminders() {
                 今天生日！记得祝福
               </span>
             </div>
-            <span className="text-xs text-red-500">去处理 →</span>
             <span className="text-xs" style={{ color: r.type === 'birthday' ? '#ef4444' : '#f97316' }}>去处理 →</span>
           </Link>
         ))}
@@ -67,12 +66,12 @@ interface Workspace {
   color: string
 }
 
-const colorClasses: Record<string, { bg: string; dot: string }> = {
-  indigo: { bg: 'bg-indigo-50 border-indigo-200', dot: 'bg-indigo-500' },
-  emerald: { bg: 'bg-emerald-50 border-emerald-200', dot: 'bg-emerald-500' },
-  amber: { bg: 'bg-amber-50 border-amber-200', dot: 'bg-amber-500' },
-  rose: { bg: 'bg-rose-50 border-rose-200', dot: 'bg-rose-500' },
-  violet: { bg: 'bg-violet-50 border-violet-200', dot: 'bg-violet-500' },
+const colorClasses: Record<string, { bg: string; dot: string; icon: string }> = {
+  indigo: { bg: 'bg-indigo-50 border-indigo-200', dot: 'bg-indigo-500', icon: 'bg-indigo-100 text-indigo-600' },
+  emerald: { bg: 'bg-emerald-50 border-emerald-200', dot: 'bg-emerald-500', icon: 'bg-emerald-100 text-emerald-600' },
+  amber: { bg: 'bg-amber-50 border-amber-200', dot: 'bg-amber-500', icon: 'bg-amber-100 text-amber-600' },
+  rose: { bg: 'bg-rose-50 border-rose-200', dot: 'bg-rose-500', icon: 'bg-rose-100 text-rose-600' },
+  violet: { bg: 'bg-violet-50 border-violet-200', dot: 'bg-violet-500', icon: 'bg-violet-100 text-violet-600' },
 }
 
 export function DashboardPage() {
@@ -134,7 +133,7 @@ export function DashboardPage() {
             const c = colorClasses[ws.color] || colorClasses.indigo
             return (
               <div key={ws.id} className="px-5 py-3.5 flex items-center gap-3 hover:bg-zinc-50">
-                <div className={`w-8 h-8 rounded-lg flex items-center justify-center shrink-0 bg-indigo-50 text-indigo-500`}>
+                <div className={`w-8 h-8 rounded-lg flex items-center justify-center shrink-0 ${c.icon}`}>
                   <Icon name="FolderOpen" size={16} />
                 </div>
                 <div className="flex-1 min-w-0">

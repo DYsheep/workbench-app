@@ -11,30 +11,31 @@ import type { DrugInfo } from '../data/drugsMock'
 
 const HOT = ['阿莫西林', '布洛芬', '阿奇霉素', '二甲双胍', '氯雷他定']
 
-function SectionBlock({ icon, title, color, bg, border, children }: {
-  icon: string; title: string; color: string; bg: string; border: string; children: React.ReactNode
-}) {
-  return (
-    <div className="rounded-xl p-4" style={{ background: bg, border: `1px solid ${border}` }}>
-      <div className="flex items-center gap-2 mb-2">
-        <span className="text-base">{icon}</span>
-        <span className="text-xs font-semibold" style={{ color }}>{title}</span>
-      </div>
-      {children}
-    </div>
-  )
-}
-
-function ListItems({ items, color }: { items: string[]; color: string }) {
+// 折叠列表：默认显示前 N 条，超出可展开
+function CollapseList({ items, color, initial = 3 }: { items: string[]; color: string; initial?: number }) {
+  const [expanded, setExpanded] = useState(false)
   if (!items || items.length === 0) return <p className="text-xs text-zinc-400">数据源未提供</p>
+  const shown = expanded ? items : items.slice(0, initial)
+  const hidden = items.length - shown.length
   return (
     <ul className="space-y-1.5">
-      {items.map((item, i) => (
+      {shown.map((item, i) => (
         <li key={i} className="flex gap-2 text-sm text-zinc-700 leading-relaxed">
           <span className="mt-1.5 w-1 h-1 rounded-full shrink-0" style={{ background: color }} />
-          {item}
+          <span>{item}</span>
         </li>
       ))}
+      {hidden > 0 && (
+        <li>
+          <button
+            onClick={() => setExpanded(!expanded)}
+            className="text-xs font-medium mt-1 hover:opacity-70 transition-opacity"
+            style={{ color }}
+          >
+            {expanded ? '▴ 收起' : `▾ 展开全部 ${items.length} 条`}
+          </button>
+        </li>
+      )}
     </ul>
   )
 }
@@ -87,7 +88,6 @@ export function DrugsPage() {
     setIndexProgress('正在建立索引...')
     try {
       await fetch(`${API_BASE}/api/drugs/build-index`, { method: 'POST', credentials: 'include' })
-      // 轮询状态
       const timer = setInterval(async () => {
         const res = await fetch(`${API_BASE}/api/drugs/index-status`, { credentials: 'include' })
         const d = await res.json()
@@ -130,7 +130,7 @@ export function DrugsPage() {
       </div>
 
       {/* Search */}
-      <div className="bg-white rounded-2xl border border-zinc-200 p-4 mb-6 shadow-sm">
+      <div className="bg-white rounded-xl border border-zinc-200 p-4 mb-6">
         <div className="flex gap-3">
           <div className="flex-1 relative">
             <span className="absolute left-3 top-1/2 -translate-y-1/2 text-base">💊</span>
@@ -200,85 +200,131 @@ export function DrugsPage() {
 
       {drug && (
         <div>
-          {/* Header card */}
-          <div className="bg-white rounded-2xl border border-zinc-200 p-5 mb-4 shadow-sm">
+          {/* ===== 头卡：元信息 + 警示条 ===== */}
+          <div className="bg-white rounded-xl border border-zinc-200 p-5 mb-4">
             <div className="flex items-start gap-4">
               <div className="w-12 h-12 rounded-xl bg-indigo-50 flex items-center justify-center text-2xl shrink-0">💊</div>
               <div className="flex-1 min-w-0">
                 <div className="flex items-center gap-2 flex-wrap">
-                  <h3 className="text-lg font-semibold text-zinc-800">{drug.name}</h3>
+                  <h3 className="text-xl font-bold text-zinc-800">{drug.name}</h3>
                   {drug.spec && <span className="text-[11px] px-2 py-0.5 rounded-md bg-cyan-50 text-cyan-700 font-medium border border-cyan-100">📦 {drug.spec}</span>}
                   {drug.category && <span className="text-[10px] px-2 py-0.5 rounded-full bg-indigo-50 text-indigo-600 font-medium">{drug.category}</span>}
                 </div>
-                <div className="text-xs text-zinc-400 mt-1.5 space-x-3">
-                  {drug.genericName && <span>通用名：{drug.genericName}</span>}
-                  {drug.pzwh && <span>{drug.pzwh}</span>}
+                <div className="flex flex-wrap gap-x-4 gap-y-1 mt-1.5 text-xs text-zinc-500">
+                  {drug.genericName && <span>通用名：<span className="text-zinc-700">{drug.genericName}</span></span>}
+                  {drug.pzwh && <span>批准文号：<span className="text-zinc-700">{drug.pzwh}</span></span>}
+                  {drug.manu && <span>厂家：<span className="text-zinc-700">{drug.manu}</span></span>}
                 </div>
-                {drug.manu && <p className="text-[11px] text-zinc-400 mt-1">🏭 {drug.manu}</p>}
               </div>
             </div>
+
+            {/* 禁忌警示条（前置，一眼可见） */}
+            {drug.contraindications.length > 0 && (
+              <div className="mt-3 flex gap-2.5 rounded-xl bg-red-50 border border-red-100 p-3">
+                <span className="text-base shrink-0 mt-0.5">🚫</span>
+                <div className="min-w-0">
+                  <p className="text-xs font-semibold text-red-700 mb-0.5">禁忌</p>
+                  <p className="text-xs text-red-600 leading-relaxed line-clamp-2">{drug.contraindications.join('；')}</p>
+                </div>
+              </div>
+            )}
+
+            {/* 注意事项警示条 */}
             {drug.note && (
-              <div className="mt-3 pt-3 border-t border-zinc-100 flex gap-2 text-xs text-amber-700">
-                <span className="shrink-0">⚠️</span>
-                <p className="leading-relaxed">{drug.note}</p>
+              <div className="mt-2 flex gap-2.5 rounded-xl bg-amber-50 border border-amber-100 p-3">
+                <span className="text-base shrink-0 mt-0.5">⚠️</span>
+                <div className="min-w-0">
+                  <p className="text-xs font-semibold text-amber-700 mb-0.5">注意事项</p>
+                  <p className="text-xs text-amber-700/80 leading-relaxed line-clamp-2">{drug.note}</p>
+                </div>
               </div>
             )}
           </div>
 
-          {/* Candidates */}
+          {/* ===== 同名候选切换 ===== */}
           {candidates.length > 1 && (
-            <div className="bg-white rounded-2xl border border-zinc-200 p-3 mb-4 shadow-sm">
-              <p className="text-[10px] text-zinc-400 mb-2">同名药品（{candidates.length} 个）</p>
-              <div className="flex flex-col gap-1.5">
+            <div className="bg-white rounded-xl border border-zinc-200 p-3 mb-4">
+              <p className="text-[10px] text-zinc-400 mb-2">同名药品（{candidates.length} 个，点击切换）</p>
+              <div className="flex gap-1.5 overflow-x-auto pb-0.5">
                 {candidates.map((c) => (
                   <button
                     key={c.drug_id}
                     onClick={() => handleSelectCandidate(c)}
-                    className={`text-left px-3 py-2 rounded-lg text-xs transition-colors ${drug.id === c.drug_id ? 'bg-indigo-50 text-indigo-700' : 'bg-zinc-50 text-zinc-600 hover:bg-zinc-100'}`}
+                    className={`text-left px-3 py-2 rounded-lg text-xs transition-colors shrink-0 max-w-52 ${
+                      drug.id === c.drug_id ? 'bg-indigo-50 text-indigo-700 ring-1 ring-indigo-200' : 'bg-zinc-50 text-zinc-600 hover:bg-zinc-100'
+                    }`}
                   >
-                    <span className="font-medium">{c.drug_name}</span>
-                    <span className="text-zinc-400 ml-2">{c.manu}</span>
+                    <span className="font-medium block truncate">{c.drug_name}</span>
+                    <span className="text-zinc-400 text-[10px] block truncate">{c.manu}</span>
                   </button>
                 ))}
               </div>
             </div>
           )}
 
-          {/* Sections */}
-          <div className="grid gap-3 mb-4">
-            <SectionBlock icon="🩺" title="适应症" color="#185FA5" bg="#f0f7ff" border="#d0e6f8">
-              <ListItems items={drug.indications} color="#185FA5" />
-            </SectionBlock>
+          {/* ===== 主体：两列卡片网格 ===== */}
+          <div className="grid md:grid-cols-2 gap-3 mb-4">
+            {/* 适应症（主内容） */}
+            <div className="bg-white rounded-xl border border-zinc-200 p-4 md:col-span-2">
+              <div className="flex items-center gap-2 mb-2.5">
+                <span className="text-base">🩺</span>
+                <span className="text-sm font-semibold text-zinc-700">适应症</span>
+                <span className="text-[10px] text-zinc-300 font-normal">Indications</span>
+              </div>
+              <CollapseList items={drug.indications} color="#185FA5" initial={4} />
+            </div>
 
-            <SectionBlock icon="💉" title="用法用量" color="#0F6E56" bg="#f0faf6" border="#cdeee3">
-              <p className="text-sm text-zinc-700 leading-relaxed">{drug.dosage || '数据源未提供'}</p>
-            </SectionBlock>
+            {/* 用法用量（重点卡片） */}
+            <div className="bg-white rounded-xl border border-zinc-200 p-4">
+              <div className="flex items-center gap-2 mb-2.5">
+                <span className="text-base">💉</span>
+                <span className="text-sm font-semibold text-zinc-700">用法用量</span>
+                <span className="text-[10px] text-zinc-300 font-normal">Dosage</span>
+              </div>
+              <p className="text-sm text-zinc-700 leading-relaxed whitespace-pre-line">{drug.dosage || '数据源未提供'}</p>
+            </div>
 
-            <SectionBlock icon="🤒" title="不良反应" color="#A32D2D" bg="#fef5f5" border="#f8d7d7">
-              <ListItems items={drug.adverseReactions} color="#E24B4A" />
-            </SectionBlock>
+            {/* 不良反应（折叠） */}
+            <div className="bg-white rounded-xl border border-zinc-200 p-4">
+              <div className="flex items-center gap-2 mb-2.5">
+                <span className="text-base">🤒</span>
+                <span className="text-sm font-semibold text-zinc-700">不良反应</span>
+                <span className="text-[10px] text-zinc-300 font-normal">Side effects</span>
+              </div>
+              <CollapseList items={drug.adverseReactions} color="#BA7517" initial={2} />
+            </div>
 
-            <SectionBlock icon="🚫" title="禁忌症" color="#A32D2D" bg="#fef2f2" border="#f9c6c6">
-              <ListItems items={drug.contraindications} color="#E24B4A" />
-            </SectionBlock>
-
-            <SectionBlock icon="👥" title="特殊人群用药" color="#534AB7" bg="#f5f4fe" border="#dddaf8">
-              {drug.specialGroups.length === 0 ? (
-                <p className="text-xs text-zinc-400">数据源未提供</p>
-              ) : (
-                <div className="space-y-2">
-                  {drug.specialGroups.map((g, i) => (
-                    <div key={i} className="flex gap-3">
-                      <span className="text-[10px] px-2 py-0.5 rounded-md bg-violet-100 text-violet-700 font-medium whitespace-nowrap h-fit mt-0.5">
-                        {g.group}
-                      </span>
-                      <p className="text-sm text-zinc-700 leading-relaxed">{g.advice}</p>
-                    </div>
-                  ))}
+            {/* 禁忌症（完整） */}
+            {drug.contraindications.length > 0 && (
+              <div className="bg-white rounded-xl border border-red-100 p-4 md:col-span-2">
+                <div className="flex items-center gap-2 mb-2.5">
+                  <span className="text-base">🚫</span>
+                  <span className="text-sm font-semibold text-red-700">禁忌</span>
+                  <span className="text-[10px] text-zinc-300 font-normal">Contraindications</span>
                 </div>
-              )}
-            </SectionBlock>
+                <CollapseList items={drug.contraindications} color="#E24B4A" initial={3} />
+              </div>
+            )}
           </div>
+
+          {/* ===== 特殊人群：横向小卡片 ===== */}
+          {drug.specialGroups.length > 0 && (
+            <div className="mb-4">
+              <p className="text-sm font-semibold text-zinc-700 mb-2 flex items-center gap-2">
+                <span className="text-base">👥</span> 特殊人群用药
+              </p>
+              <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-2">
+                {drug.specialGroups.map((g, i) => (
+                  <div key={i} className="bg-white rounded-xl border border-violet-100 p-3">
+                    <span className="inline-block text-[10px] px-2 py-0.5 rounded-md bg-violet-100 text-violet-700 font-medium mb-1.5">
+                      {g.group}
+                    </span>
+                    <p className="text-xs text-zinc-600 leading-relaxed line-clamp-3">{g.advice}</p>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
 
           <p className="text-center text-[10px] text-zinc-300 mb-4">— 数据来自万维易源药品数据库，实际用药请遵医嘱 —</p>
         </div>

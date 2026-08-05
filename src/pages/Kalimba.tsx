@@ -253,7 +253,7 @@ export function KalimbaPage() {
   }, [micHitId])
 
   return (
-    <div className="max-w-5xl">
+    <div className="max-w-4xl">
       {/* Header */}
       <div className="flex items-center justify-between mb-4">
         <h2 className="text-lg font-semibold text-zinc-800">拇指琴</h2>

@@ -342,7 +342,7 @@ export function RelationsPage() {
 
       {showPersonForm&&editingPerson&&(
         <div className="fixed inset-0 z-50 flex items-center justify-center" style={{background:'rgba(0,0,0,0.3)',backdropFilter:'blur(4px)'}} onClick={()=>{setShowPersonForm(false);setEditingPerson(null)}}>
-          <div className="bg-white rounded-2xl p-6 w-full max-w-md mx-4 shadow-2xl" onClick={e=>e.stopPropagation()} style={{maxHeight:'90vh',overflow:'auto'}}>
+          <div className="bg-white rounded-2xl p-6 w-full max-w-md mx-4 shadow-xl" onClick={e=>e.stopPropagation()} style={{maxHeight:'90vh',overflow:'auto'}}>
             <h3 className="text-sm font-semibold text-zinc-800 mb-4">{people.find(x=>x.id===editingPerson.id)?'编辑信息':`添加${cat.label}人物`}</h3>
             <div className="space-y-3">
               <div><label className="text-[11px] text-zinc-500 mb-1 block">头像</label><div className="grid grid-cols-6 gap-1.5">{AVATARS.map(a=>(<button key={a.e} onClick={()=>setEditingPerson({...editingPerson,avatar:a.e})} className={`flex flex-col items-center gap-0.5 p-1.5 rounded-lg transition-all ${editingPerson.avatar===a.e?'ring-2 shadow-sm':'opacity-60 hover:opacity-100'}`} style={{ringColor:cat.color,background:editingPerson.avatar===a.e?cat.bg:'transparent'}}><span className="text-xl">{a.e}</span><span className="text-[8px]" style={{color:editingPerson.avatar===a.e?cat.color:'#a1a1aa'}}>{a.l}</span></button>))}</div></div>

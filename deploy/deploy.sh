@@ -65,6 +65,11 @@ server {
         try_files \$uri \$uri/ /index.html;
     }
 
+    # index.html 不缓存（每次强制验证，部署后浏览器自动拿最新版本）
+    location = /index.html {
+        add_header Cache-Control "no-cache";
+    }
+
     # 关系梳理图片（服务器磁盘 uploads/）
     location /uploads/ {
         alias /opt/workbench-app/server/uploads/;

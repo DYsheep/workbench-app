@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { API_BASE } from '../store/auth'
 import { fetchDrug as fetchMockDrug } from '../data/drugsMock'
 import type { DrugInfo } from '../data/drugsMock'
@@ -42,6 +42,104 @@ function CollapseList({ items, color, initial = 3 }: { items: string[]; color: s
 
 interface Candidate { drug_id: string; drug_name: string; manu: string; pzwh: string; classify_name: string }
 
+// ============================================================
+// 同名候选弹窗：滚动查看全部 + 模糊搜索（药名/厂家）
+// ============================================================
+function CandidateModal({ candidates, currentId, onSelect, onClose }: {
+  candidates: Candidate[]
+  currentId: string
+  onSelect: (c: Candidate) => void
+  onClose: () => void
+}) {
+  const [query, setQuery] = useState('')
+  const [selected, setSelected] = useState(-1) // 键盘上下键索引
+
+  // Esc 关闭
+  useEffect(() => {
+    const h = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose() }
+    window.addEventListener('keydown', h)
+    return () => window.removeEventListener('keydown', h)
+  }, [onClose])
+
+  const filtered = query.trim()
+    ? candidates.filter(c =>
+        c.drug_name.toLowerCase().includes(query.trim().toLowerCase()) ||
+        c.manu.toLowerCase().includes(query.trim().toLowerCase())
+      )
+    : candidates
+
+  const handleSelect = (c: Candidate) => { onSelect(c); onClose() }
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/30" onClick={onClose}>
+      <div
+        className="bg-white rounded-xl w-full max-w-lg flex flex-col max-h-[75vh] shadow-xl"
+        onClick={(e) => e.stopPropagation()}
+      >
+        {/* 头部 */}
+        <div className="flex items-center justify-between px-4 py-3 border-b border-zinc-100 shrink-0">
+          <h3 className="text-sm font-semibold text-zinc-800">
+            同名药品 <span className="text-zinc-400 font-normal">共 {candidates.length} 个</span>
+          </h3>
+          <button onClick={onClose} className="p-1.5 rounded-md hover:bg-zinc-100 text-zinc-400" aria-label="关闭">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><path d="M18 6L6 18M6 6l12 12"/></svg>
+          </button>
+        </div>
+
+        {/* 搜索框 */}
+        <div className="px-4 py-2.5 border-b border-zinc-100 shrink-0">
+          <div className="relative">
+            <span className="absolute left-3 top-1/2 -translate-y-1/2 text-zinc-400 text-xs">🔍</span>
+            <input
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              placeholder="搜索药名或厂家..."
+              className="w-full pl-9 pr-3 py-2 rounded-lg border border-zinc-200 text-sm focus:outline-none focus:border-indigo-400 focus:ring-2 focus:ring-indigo-100"
+              autoFocus
+            />
+          </div>
+        </div>
+
+        {/* 列表（可滚动） */}
+        <div className="flex-1 overflow-y-auto p-2">
+          {filtered.length === 0 ? (
+            <p className="text-center text-sm text-zinc-400 py-8">没有匹配「{query}」的药品</p>
+          ) : (
+            <div className="space-y-1">
+              {filtered.map((c) => (
+                <button
+                  key={c.drug_id}
+                  onClick={() => handleSelect(c)}
+                  className={`w-full text-left px-3 py-2.5 rounded-lg transition-colors flex items-center justify-between gap-3 ${
+                    currentId === c.drug_id ? 'bg-indigo-50 ring-1 ring-indigo-200' : 'hover:bg-zinc-50'
+                  }`}
+                >
+                  <div className="min-w-0">
+                    <p className={`text-sm truncate ${currentId === c.drug_id ? 'text-indigo-700 font-medium' : 'text-zinc-800'}`}>
+                      {c.drug_name}
+                    </p>
+                    <p className="text-xs text-zinc-400 truncate mt-0.5">
+                      {c.manu}{c.pzwh ? ` · ${c.pzwh}` : ''}
+                    </p>
+                  </div>
+                  {currentId === c.drug_id && (
+                    <span className="text-[10px] text-indigo-600 shrink-0">当前 ✓</span>
+                  )}
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
+
+        {/* 底部统计 */}
+        <div className="px-4 py-2 border-t border-zinc-100 text-[11px] text-zinc-400 shrink-0">
+          显示 {filtered.length} / {candidates.length} 个，点击切换药品
+        </div>
+      </div>
+    </div>
+  )
+}
+
 export function DrugsPage() {
   const [keyword, setKeyword] = useState('')
   const [drug, setDrug] = useState<DrugInfo | null>(null)
@@ -52,7 +150,7 @@ export function DrugsPage() {
   const [needIndex, setNeedIndex] = useState(false)
   const [building, setBuilding] = useState(false)
   const [indexProgress, setIndexProgress] = useState('')
-  const [showAllCands, setShowAllCands] = useState(false)
+  const [candModal, setCandModal] = useState(false)
 
   const handleSearch = async (kw?: string) => {
     const q = kw || keyword
@@ -61,7 +159,7 @@ export function DrugsPage() {
     setError('')
     setDrug(null)
     setCandidates([])
-    setShowAllCands(false)
+    setCandModal(false)
     setNeedIndex(false)
     try {
       const res = await fetch(`${API_BASE}/api/drugs/search?q=${encodeURIComponent(q.trim())}`, { credentials: 'include' })
@@ -248,19 +346,19 @@ export function DrugsPage() {
             <div className="bg-white rounded-xl border border-zinc-200 p-3 mb-4">
               <div className="flex items-center justify-between mb-2">
                 <p className="text-[10px] text-zinc-400">
-                  同名药品共 <span className="text-zinc-600 font-medium">{candidates.length}</span> 个（不同厂家/剂型，点击切换）
+                  同名药品共 <span className="text-zinc-600 font-medium">{candidates.length}</span> 个（不同厂家/剂型）
                 </p>
                 {candidates.length > 10 && (
                   <button
-                    onClick={() => setShowAllCands(!showAllCands)}
+                    onClick={() => setCandModal(true)}
                     className="text-[10px] font-medium text-indigo-600 hover:text-indigo-700 shrink-0"
                   >
-                    {showAllCands ? '▴ 收起' : `▾ 展开全部 ${candidates.length} 个`}
+                    查看全部 {candidates.length} 个 ›
                   </button>
                 )}
               </div>
               <div className="flex gap-1.5 overflow-x-auto pb-0.5">
-                {(showAllCands ? candidates : candidates.slice(0, 10)).map((c) => (
+                {candidates.slice(0, 10).map((c) => (
                   <button
                     key={c.drug_id}
                     onClick={() => handleSelectCandidate(c)}
@@ -274,6 +372,16 @@ export function DrugsPage() {
                 ))}
               </div>
             </div>
+          )}
+
+          {/* ===== 同名候选弹窗 ===== */}
+          {candModal && (
+            <CandidateModal
+              candidates={candidates}
+              currentId={drug.id}
+              onSelect={handleSelectCandidate}
+              onClose={() => setCandModal(false)}
+            />
           )}
 
           {/* ===== 主体：两列卡片网格 ===== */}

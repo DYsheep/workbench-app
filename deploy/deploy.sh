@@ -30,7 +30,8 @@ if [ ! -f .env ]; then
   exit 1
 fi
 npm install --omit=dev
-pm2 start index.js --name workbench-api --cwd "$APP_DIR/server"
+# 进程已存在则重启（加载新代码），否则新建
+pm2 startOrRestart index.js --name workbench-api --cwd "$APP_DIR/server"
 pm2 save
 
 echo "==> [3/6] 构建前端（PWA）"

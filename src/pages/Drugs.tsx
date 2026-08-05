@@ -163,7 +163,14 @@ export function DrugsPage() {
     try {
       const res = await fetch(`${API_BASE}/api/drugs/search?q=${encodeURIComponent(q.trim())}`, { credentials: 'include' })
       const data = await res.json()
-      if (data.needIndex) {
+      if (data.error) {
+        // 后端错误（401 登录失效等）明确提示，避免误报"没有该药品"
+        if (data.error === '未登录' || data.error.includes('会话过期')) {
+          setError('登录状态已失效，请重新登录后再搜索')
+        } else {
+          setError(data.error)
+        }
+      } else if (data.needIndex) {
         setNeedIndex(true)
         setError(data.message)
       } else if (data.data) {

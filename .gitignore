@@ -32,3 +32,4 @@ server/data/
 .env.production
 dev-dist
 fix_detail_pos.py
+rewrite_kalimba_21.py

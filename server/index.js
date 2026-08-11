@@ -118,14 +118,18 @@ db.exec(`
     UNIQUE(user_id, drug_id)
   );
 
-  -- ====== 药品备注（服务器端存储，user_id + drug_id 唯一） ======
-  CREATE TABLE IF NOT EXISTS drug_notes (
+  -- ====== 药品自定义模块（服务器端存储，每药可多个） ======
+  CREATE TABLE IF NOT EXISTS drug_modules (
+    id TEXT PRIMARY KEY,
     user_id TEXT NOT NULL REFERENCES users(id),
     drug_id TEXT NOT NULL,
-    note TEXT NOT NULL DEFAULT '',
-    updated_at TEXT DEFAULT (datetime('now')),
-    PRIMARY KEY (user_id, drug_id)
+    title TEXT NOT NULL,
+    content TEXT NOT NULL DEFAULT '',
+    sort INTEGER DEFAULT 0,
+    created_at TEXT DEFAULT (datetime('now')),
+    updated_at TEXT DEFAULT (datetime('now'))
   );
+  CREATE INDEX IF NOT EXISTS idx_drug_modules ON drug_modules(user_id, drug_id);
 
   -- ====== 拇指琴统计（服务器端存储） ======
   CREATE TABLE IF NOT EXISTS kalimba_stats (
@@ -146,7 +150,8 @@ try {
   db.exec('DROP TABLE IF EXISTS drug_cache')
   db.exec('DROP TABLE IF EXISTS files')
   db.exec('DROP TABLE IF EXISTS workspaces')
-  console.log('[DB] Dropped legacy tables (drug_cache / workspaces / files)')
+  db.exec('DROP TABLE IF EXISTS drug_notes')  // 备注已升级为自定义模块（drug_modules）
+  console.log('[DB] Dropped legacy tables (drug_cache / workspaces / files / drug_notes)')
 } catch (e) {
   console.error('[DB] Drop legacy tables failed:', e.message)
 }
@@ -681,33 +686,58 @@ async function handleRequest(req, res) {
     return json(res, { ok: true })
   }
 
-  // ====== DRUG NOTES（药品备注 · 服务器端存储） ======
-  // GET /api/drugs/notes → 当前用户全部备注 { drug_id: note }
-  if (pathname === '/api/drugs/notes' && req.method === 'GET') {
+  // ====== DRUG MODULES（药品自定义模块 · 服务器端存储） ======
+  // GET /api/drugs/modules → 当前用户全部模块 { drug_id: [{id,title,content}] }
+  if (pathname === '/api/drugs/modules' && req.method === 'GET') {
     const sess = requireAuth(req, res)
     if (!sess) return
-    const rows = db.prepare('SELECT drug_id, note FROM drug_notes WHERE user_id = ?').all(sess.user_id)
+    const rows = db.prepare(
+      'SELECT id, drug_id, title, content FROM drug_modules WHERE user_id = ? ORDER BY sort, created_at'
+    ).all(sess.user_id)
     const data = {}
-    for (const r of rows) if (r.note) data[r.drug_id] = r.note
+    for (const r of rows) {
+      ;(data[r.drug_id] ||= []).push({ id: r.id, title: r.title, content: r.content })
+    }
     return json(res, { data })
   }
 
-  // PUT /api/drugs/notes/:drugId → upsert 备注（note 为空则删除该记录）
-  const noteMatch = pathname.match(/^\/api\/drugs\/notes\/([^/]+)$/)
-  if (noteMatch && req.method === 'PUT') {
+  // POST /api/drugs/modules → 新增模块
+  if (pathname === '/api/drugs/modules' && req.method === 'POST') {
     const sess = requireAuth(req, res)
     if (!sess) return
-    const { note } = await parseBody(req)
-    const drugId = decodeURIComponent(noteMatch[1])
-    const noteStr = typeof note === 'string' ? note.trim() : ''
-    if (noteStr) {
-      db.prepare(
-        `INSERT INTO drug_notes (user_id, drug_id, note, updated_at) VALUES (?,?,?,datetime('now'))
-         ON CONFLICT(user_id, drug_id) DO UPDATE SET note = excluded.note, updated_at = datetime('now')`
-      ).run(sess.user_id, drugId, noteStr)
-    } else {
-      db.prepare('DELETE FROM drug_notes WHERE user_id = ? AND drug_id = ?').run(sess.user_id, drugId)
-    }
+    const { drug_id, title, content } = await parseBody(req)
+    if (!drug_id || typeof drug_id !== 'string') return json(res, { error: '缺少 drug_id' }, 400)
+    const titleStr = (typeof title === 'string' ? title : '').trim()
+    if (!titleStr) return json(res, { error: '请填写模块标题' }, 400)
+    const contentStr = (typeof content === 'string' ? content : '').trim()
+    const id = `m_${crypto.randomUUID()}`
+    db.prepare(
+      'INSERT INTO drug_modules (id, user_id, drug_id, title, content, sort) VALUES (?,?,?,?,?,?)'
+    ).run(id, sess.user_id, drug_id, titleStr, contentStr, Date.now())
+    return json(res, { data: { id, title: titleStr, content: contentStr } }, 201)
+  }
+
+  // PUT /api/drugs/modules/:id → 更新模块
+  const moduleMatch = pathname.match(/^\/api\/drugs\/modules\/([^/]+)$/)
+  if (moduleMatch && req.method === 'PUT') {
+    const sess = requireAuth(req, res)
+    if (!sess) return
+    const { title, content } = await parseBody(req)
+    const titleStr = (typeof title === 'string' ? title : '').trim()
+    if (!titleStr) return json(res, { error: '请填写模块标题' }, 400)
+    const contentStr = (typeof content === 'string' ? content : '').trim()
+    const r = db.prepare(
+      "UPDATE drug_modules SET title = ?, content = ?, updated_at = datetime('now') WHERE id = ? AND user_id = ?"
+    ).run(titleStr, contentStr, decodeURIComponent(moduleMatch[1]), sess.user_id)
+    if (r.changes === 0) return json(res, { error: '模块不存在' }, 404)
+    return json(res, { ok: true })
+  }
+
+  // DELETE /api/drugs/modules/:id → 删除模块
+  if (moduleMatch && req.method === 'DELETE') {
+    const sess = requireAuth(req, res)
+    if (!sess) return
+    db.prepare('DELETE FROM drug_modules WHERE id = ? AND user_id = ?').run(decodeURIComponent(moduleMatch[1]), sess.user_id)
     return json(res, { ok: true })
   }
 

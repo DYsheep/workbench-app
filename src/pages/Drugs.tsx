@@ -21,6 +21,13 @@ interface Favorite {
   created_at: string
 }
 
+// 自定义信息模块（每药可多个，标题 + 内容，服务器存储）
+interface DrugModule {
+  id: string
+  title: string
+  content: string
+}
+
 // 折叠列表：默认显示前 N 条，超出可展开
 function CollapseList({ items, color, initial = 3 }: { items: string[]; color: string; initial?: number }) {
   const [expanded, setExpanded] = useState(false)
@@ -164,10 +171,11 @@ export function DrugsPage() {
   const [view, setView] = useState<'search' | 'favorites'>('search')
   const [favorites, setFavorites] = useState<Favorite[]>([])
   const [favFrom, setFavFrom] = useState(false) // 当前详情是否从收藏打开（显示返回按钮）
-  // 备注（user_id + drug_id 关联，服务器存储）
-  const [notes, setNotes] = useState<Record<string, string>>({})
-  const [noteModal, setNoteModal] = useState(false)
-  const [noteDraft, setNoteDraft] = useState('')
+  // 自定义信息模块（每药可多个，服务器存储）
+  const [modules, setModules] = useState<Record<string, DrugModule[]>>({})
+  const [moduleModal, setModuleModal] = useState(false)
+  const [moduleDraft, setModuleDraft] = useState({ title: '', content: '' })
+  const [editingModuleId, setEditingModuleId] = useState<string | null>(null)
 
   // 加载收藏列表
   useEffect(() => {
@@ -177,40 +185,64 @@ export function DrugsPage() {
       .catch(() => {})
   }, [])
 
-  // 加载备注
+  // 加载自定义模块
   useEffect(() => {
-    fetch(`${API_BASE}/api/drugs/notes`, { credentials: 'include' })
+    fetch(`${API_BASE}/api/drugs/modules`, { credentials: 'include' })
       .then((res) => res.json())
-      .then((d) => { if (d.data) setNotes(d.data) })
+      .then((d) => { if (d.data) setModules(d.data) })
       .catch(() => {})
   }, [])
 
-  // 打开备注弹窗（编辑当前药品备注）
-  const openNoteModal = () => {
+  // 打开模块弹窗（新增或编辑）
+  const openModuleModal = (m?: DrugModule) => {
     if (!drug) return
-    setNoteDraft(notes[drug.id] || '')
-    setNoteModal(true)
+    setEditingModuleId(m ? m.id : null)
+    setModuleDraft({ title: m ? m.title : '', content: m ? m.content : '' })
+    setModuleModal(true)
   }
 
-  // 保存备注（服务器 upsert，空内容则删除记录）
-  const saveNote = async () => {
+  // 保存模块（新增 POST / 编辑 PUT）
+  const saveModule = async () => {
     if (!drug) return
-    const text = noteDraft.trim()
+    const title = moduleDraft.title.trim()
+    const content = moduleDraft.content.trim()
+    if (!title) return
     try {
-      await fetch(`${API_BASE}/api/drugs/notes/${encodeURIComponent(drug.id)}`, {
-        method: 'PUT',
-        credentials: 'include',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ note: text }),
-      })
-      setNotes((prev) => {
-        const next = { ...prev }
-        if (text) next[drug.id] = text
-        else delete next[drug.id]
-        return next
-      })
+      if (editingModuleId) {
+        await fetch(`${API_BASE}/api/drugs/modules/${encodeURIComponent(editingModuleId)}`, {
+          method: 'PUT',
+          credentials: 'include',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ title, content }),
+        })
+        setModules((prev) => ({
+          ...prev,
+          [drug.id]: (prev[drug.id] || []).map((m) => m.id === editingModuleId ? { ...m, title, content } : m),
+        }))
+      } else {
+        const res = await fetch(`${API_BASE}/api/drugs/modules`, {
+          method: 'POST',
+          credentials: 'include',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ drug_id: drug.id, title, content }),
+        })
+        const d = await res.json()
+        if (d.data) {
+          setModules((prev) => ({ ...prev, [drug.id]: [...(prev[drug.id] || []), d.data] }))
+        }
+      }
     } catch { /* 静默 */ }
-    setNoteModal(false)
+    setModuleModal(false)
+  }
+
+  // 删除模块
+  const deleteModule = async (id: string) => {
+    if (!drug) return
+    if (!window.confirm('确定删除这个模块？')) return
+    try {
+      await fetch(`${API_BASE}/api/drugs/modules/${encodeURIComponent(id)}`, { method: 'DELETE', credentials: 'include' })
+      setModules((prev) => ({ ...prev, [drug.id]: (prev[drug.id] || []).filter((m) => m.id !== id) }))
+    } catch { /* 静默 */ }
   }
 
   // 收藏 / 取消收藏（存服务器快照）
@@ -486,14 +518,14 @@ export function DrugsPage() {
                     {favorites.some((f) => f.drug_id === drug.id) ? '★ 已收藏' : '☆ 收藏'}
                   </button>
                   <button
-                    onClick={openNoteModal}
+                    onClick={() => openModuleModal()}
                     className={`flex items-center gap-1 px-3 py-1.5 rounded-lg text-xs font-medium transition-colors shrink-0 ${
-                      notes[drug.id]
+                      (modules[drug.id] || []).length > 0
                         ? 'bg-emerald-50 text-emerald-600 border border-emerald-200'
                         : 'bg-zinc-50 text-zinc-500 border border-zinc-200 hover:bg-emerald-50 hover:text-emerald-600'
                     }`}
                   >
-                    <span className="text-sm leading-none">＋</span> 备注
+                    <span className="text-sm leading-none">＋</span> 添加模块
                   </button>
                 </div>
                 <div className="flex flex-wrap gap-x-4 gap-y-1 mt-1.5 text-xs text-zinc-500">
@@ -560,41 +592,50 @@ export function DrugsPage() {
             </div>
           )}
 
-          {/* ===== 备注弹窗 ===== */}
-          {noteModal && (
+          {/* ===== 自定义模块弹窗（新增 / 编辑） ===== */}
+          {moduleModal && (
             <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/30">
               <div
                 className="bg-white rounded-xl w-full max-w-md shadow-xl"
                 onClick={(e) => e.stopPropagation()}
               >
                 <div className="flex items-center justify-between px-4 py-3 border-b border-zinc-100">
-                  <h3 className="text-sm font-semibold text-zinc-800">📝 药品备注</h3>
-                  <button onClick={() => setNoteModal(false)} className="p-1.5 rounded-md hover:bg-zinc-100 text-zinc-400" aria-label="关闭">
+                  <h3 className="text-sm font-semibold text-zinc-800">{editingModuleId ? '✏️ 编辑模块' : '➕ 添加模块'}</h3>
+                  <button onClick={() => setModuleModal(false)} className="p-1.5 rounded-md hover:bg-zinc-100 text-zinc-400" aria-label="关闭">
                     <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><path d="M18 6L6 18M6 6l12 12"/></svg>
                   </button>
                 </div>
                 <div className="p-4">
-                  <p className="text-xs text-zinc-400 mb-2">
-                    {drug?.name} — 记录用药提示、购买渠道等
+                  <p className="text-xs text-zinc-400 mb-3">
+                    {drug?.name} — 自定义信息模块，如"用药提醒""购买渠道"等
                   </p>
-                  <textarea
-                    value={noteDraft}
-                    onChange={(e) => setNoteDraft(e.target.value)}
-                    placeholder="输入备注内容..."
+                  <label className="text-[11px] text-zinc-500 mb-1 block">模块标题</label>
+                  <input
+                    value={moduleDraft.title}
+                    onChange={(e) => setModuleDraft((p) => ({ ...p, title: e.target.value }))}
+                    placeholder="如：用药提醒、购买渠道、注意事项..."
                     autoFocus
+                    maxLength={20}
+                    className="w-full px-3 py-2.5 rounded-xl border border-zinc-200 text-sm focus:outline-none focus:border-emerald-400 focus:ring-2 focus:ring-emerald-100 transition-all"
+                  />
+                  <label className="text-[11px] text-zinc-500 mb-1 mt-3 block">内容</label>
+                  <textarea
+                    value={moduleDraft.content}
+                    onChange={(e) => setModuleDraft((p) => ({ ...p, content: e.target.value }))}
+                    placeholder="输入模块内容..."
                     rows={5}
                     className="w-full px-3 py-2.5 rounded-xl border border-zinc-200 text-sm focus:outline-none focus:border-emerald-400 focus:ring-2 focus:ring-emerald-100 resize-none transition-all"
                   />
                   <div className="flex gap-2 mt-3">
                     <button
-                      onClick={() => setNoteModal(false)}
+                      onClick={() => setModuleModal(false)}
                       className="flex-1 py-2.5 rounded-xl border border-zinc-200 text-sm text-zinc-600 hover:bg-zinc-50 transition-colors"
                     >
                       取消
                     </button>
                     <button
-                      onClick={saveNote}
-                      disabled={!noteDraft.trim()}
+                      onClick={saveModule}
+                      disabled={!moduleDraft.title.trim()}
                       className="flex-1 py-2.5 rounded-xl bg-emerald-600 text-white text-sm font-medium hover:bg-emerald-700 disabled:opacity-40 transition-colors"
                     >
                       保存
@@ -617,23 +658,31 @@ export function DrugsPage() {
 
           {/* ===== 主体：两列卡片网格 ===== */}
           <div className="grid md:grid-cols-2 gap-3 mb-4">
-            {/* 备注（用户自定义，与其他信息模块一致） */}
-            {notes[drug.id] && (
-              <div className="bg-white rounded-xl border border-emerald-100 p-4 md:col-span-2">
+            {/* 自定义模块（用户添加，样式与其他信息模块一致） */}
+            {(modules[drug.id] || []).map((m) => (
+              <div key={m.id} className="bg-white rounded-xl border border-emerald-100 p-4 md:col-span-2">
                 <div className="flex items-center gap-2 mb-2.5">
-                  <span className="text-base">📝</span>
-                  <span className="text-sm font-semibold text-emerald-700">备注</span>
-                  <span className="text-[10px] text-zinc-300 font-normal">My note</span>
-                  <button
-                    onClick={openNoteModal}
-                    className="ml-auto text-[10px] font-medium text-emerald-600 hover:text-emerald-700 shrink-0"
-                  >
-                    ✏️ 编辑
-                  </button>
+                  <span className="text-base">📌</span>
+                  <span className="text-sm font-semibold text-emerald-700">{m.title}</span>
+                  <span className="text-[10px] text-zinc-300 font-normal">Custom</span>
+                  <div className="ml-auto flex items-center gap-2 shrink-0">
+                    <button
+                      onClick={() => openModuleModal(m)}
+                      className="text-[10px] font-medium text-emerald-600 hover:text-emerald-700"
+                    >
+                      ✏️ 编辑
+                    </button>
+                    <button
+                      onClick={() => deleteModule(m.id)}
+                      className="text-[10px] font-medium text-zinc-400 hover:text-red-500"
+                    >
+                      🗑 删除
+                    </button>
+                  </div>
                 </div>
-                <p className="text-sm text-zinc-700 leading-relaxed whitespace-pre-line">{notes[drug.id]}</p>
+                <p className="text-sm text-zinc-700 leading-relaxed whitespace-pre-line">{m.content}</p>
               </div>
-            )}
+            ))}
 
             {/* 适应症（主内容） */}
             <div className="bg-white rounded-xl border border-zinc-200 p-4 md:col-span-2">

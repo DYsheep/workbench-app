@@ -118,6 +118,15 @@ db.exec(`
     UNIQUE(user_id, drug_id)
   );
 
+  -- ====== 药品备注（服务器端存储，user_id + drug_id 唯一） ======
+  CREATE TABLE IF NOT EXISTS drug_notes (
+    user_id TEXT NOT NULL REFERENCES users(id),
+    drug_id TEXT NOT NULL,
+    note TEXT NOT NULL DEFAULT '',
+    updated_at TEXT DEFAULT (datetime('now')),
+    PRIMARY KEY (user_id, drug_id)
+  );
+
   -- ====== 拇指琴统计（服务器端存储） ======
   CREATE TABLE IF NOT EXISTS kalimba_stats (
     user_id TEXT PRIMARY KEY REFERENCES users(id),
@@ -669,6 +678,36 @@ async function handleRequest(req, res) {
     const sess = requireAuth(req, res)
     if (!sess) return
     db.prepare('DELETE FROM favorites WHERE user_id = ? AND drug_id = ?').run(sess.user_id, decodeURIComponent(favMatch[1]))
+    return json(res, { ok: true })
+  }
+
+  // ====== DRUG NOTES（药品备注 · 服务器端存储） ======
+  // GET /api/drugs/notes → 当前用户全部备注 { drug_id: note }
+  if (pathname === '/api/drugs/notes' && req.method === 'GET') {
+    const sess = requireAuth(req, res)
+    if (!sess) return
+    const rows = db.prepare('SELECT drug_id, note FROM drug_notes WHERE user_id = ?').all(sess.user_id)
+    const data = {}
+    for (const r of rows) if (r.note) data[r.drug_id] = r.note
+    return json(res, { data })
+  }
+
+  // PUT /api/drugs/notes/:drugId → upsert 备注（note 为空则删除该记录）
+  const noteMatch = pathname.match(/^\/api\/drugs\/notes\/([^/]+)$/)
+  if (noteMatch && req.method === 'PUT') {
+    const sess = requireAuth(req, res)
+    if (!sess) return
+    const { note } = await parseBody(req)
+    const drugId = decodeURIComponent(noteMatch[1])
+    const noteStr = typeof note === 'string' ? note.trim() : ''
+    if (noteStr) {
+      db.prepare(
+        `INSERT INTO drug_notes (user_id, drug_id, note, updated_at) VALUES (?,?,?,datetime('now'))
+         ON CONFLICT(user_id, drug_id) DO UPDATE SET note = excluded.note, updated_at = datetime('now')`
+      ).run(sess.user_id, drugId, noteStr)
+    } else {
+      db.prepare('DELETE FROM drug_notes WHERE user_id = ? AND drug_id = ?').run(sess.user_id, drugId)
+    }
     return json(res, { ok: true })
   }
 

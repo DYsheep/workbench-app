@@ -37,8 +37,10 @@ const PERFECT_MS = 0.12, GOOD_MS = 0.25, FALL_SEC = 2.0
 const btnS: React.CSSProperties = { padding: '8px 20px', background: '#6366f1', color: '#fff', border: 'none', borderRadius: 10, fontSize: 12, fontWeight: 600, cursor: 'pointer' }
 const btnG: React.CSSProperties = { padding: '8px 20px', background: 'rgba(255,255,255,0.06)', color: '#a1a1aa', border: '1px solid rgba(255,255,255,0.08)', borderRadius: 10, fontSize: 12, fontWeight: 500, cursor: 'pointer' }
 
-// Color per range
-function tineColor(i: number) { return i <= 6 ? { bg: '#6366f1', b: '#818cf8' } : i <= 10 ? { bg: '#8b5cf6', b: '#a78bfa' } : { bg: '#06b6d4', b: '#22d3ee' } }
+// Color by pitch register (index 不再适用——0-8 只有两色，改按频率分区)
+function tineColor(freq: number) {
+  return freq < 350 ? { bg: '#6366f1', b: '#818cf8' } : freq < 700 ? { bg: '#8b5cf6', b: '#a78bfa' } : { bg: '#06b6d4', b: '#22d3ee' }
+}
 
 // ============================================================
 // Component
@@ -211,7 +213,7 @@ export function MicRhythmGame({ onDetect }: { onDetect: (tineId: number) => void
       if (notesRef.current.length > 0 && notesRef.current.every(n => n.hit || elapsed > n.targetTime + GOOD_MS + 0.5) && elapsed > 1) {
         cancelAnimationFrame(g.raf)
         gameRef.current = null
-        closeMic()
+        // 保留麦克风流：供"再来一次"直接复用（back() 时才真正释放）
         setState('finished')
         return
       }
@@ -385,7 +387,7 @@ export function MicRhythmGame({ onDetect }: { onDetect: (tineId: number) => void
       `}</style>
       <div className="absolute flex justify-center gap-[3px] mx-auto pointer-events-none" style={{ left: '5%', right: '5%', top: 0, bottom: 0, overflow: 'hidden' }}>
         {TINES.map((tine) => {
-          const c = tineColor(tine.index)
+          const c = tineColor(tine.freq)
           // Un-hit: still flying. Judged: show result then remove.
           const activeNotes = notes.filter(n => n.tineId === tine.id)
 

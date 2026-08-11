@@ -5,12 +5,10 @@ import { MicRhythmGame as RhythmOverlay } from './MicRhythmGame'
 
 // ============================================================
 // 17-key Kalimba — C major, tines labeled with number notation
-// Ordered left-to-right as held in hands:
-//   Left hand handles treble side (shorter tines on left)
-//   Right hand handles bass side (longer tines on right)
-// Actually in standard layout:
-//   Left end = highest pitch (shortest), Right end = lowest pitch (longest)
-//   But visually tines alternate: long-short-long-short from center
+// Standard 17-key C-major layout (player view, left to right):
+//   Left 8 (outer→inner): E6 C6 A5 F5 D5 B4 G4 E4  — high register
+//   Center: C4 (lowest, longest tine)
+//   Right 8 (inner→outer): D4 F4 A4 C5 E5 G5 B5 D6  — mid to high
 // ============================================================
 export const TINES = [
   // ===== 左 8（外→内，音由高到低） =====
@@ -61,6 +59,12 @@ function tineLength(index: number): number {
   return 140 - dist * 6
 }
 
+// 本地时区日期（YYYY-MM-DD），避免 UTC 跨天错位
+function localYMD(offsetDays = 0): string {
+  const d = new Date(Date.now() + offsetDays * 86400000)
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+}
+
 // ============================================================
 // Songs
 // ============================================================
@@ -100,16 +104,22 @@ function getAudioCtx() {
 }
 export function playNote(freq: number) {
   const ctx = getAudioCtx()
-  const osc = ctx.createOscillator()
-  const gain = ctx.createGain()
-  osc.type = 'sine'
-  osc.frequency.value = freq
-  gain.gain.setValueAtTime(0.25, ctx.currentTime)
-  gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 1.5)
-  osc.connect(gain)
-  gain.connect(ctx.destination)
-  osc.start(ctx.currentTime)
-  osc.stop(ctx.currentTime + 1.5)
+  if (ctx.state === 'suspended') ctx.resume()
+  const t = ctx.currentTime
+  // 拇指琴拨弦音色：基频 + 八度/十二度泛音（triangle 波形比 sine 更有颗粒感）
+  const partials: [number, number][] = [[1, 0.3], [2, 0.12], [3, 0.06], [4, 0.03]]
+  for (const [mult, gainV] of partials) {
+    const osc = ctx.createOscillator()
+    const gain = ctx.createGain()
+    osc.type = 'triangle'
+    osc.frequency.value = freq * mult
+    gain.gain.setValueAtTime(gainV, t)
+    gain.gain.exponentialRampToValueAtTime(0.001, t + 1.2)
+    osc.connect(gain)
+    gain.connect(ctx.destination)
+    osc.start(t)
+    osc.stop(t + 1.2)
+  }
 }
 
 // ============================================================
@@ -140,6 +150,7 @@ export function KalimbaPage() {
   const [achievements, setAchievements] = useState<Set<string>>(new Set())
   const [loaded, setLoaded] = useState(false)
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null)
+  const lastNoteRef = useRef(0) // 最近一次弹奏时间（用于判断是否在练习中）
 
   // 同步到服务器（乐观）
   const syncKalimba = useCallback((s: number, min: number, ld: string, ach: Set<string>) => {
@@ -192,7 +203,9 @@ export function KalimbaPage() {
   }, [syncKalimba])
 
   useEffect(() => {
+    // 仅在实际弹奏时累计练习时长：最近 70s 内有按琴键才 +1 分钟
     timerRef.current = setInterval(() => {
+      if (Date.now() - lastNoteRef.current > 70000) return
       setPracticeMin((prev) => {
         const next = prev + 1
         syncKalimba(streak, next, lastDate, achievements)
@@ -205,9 +218,10 @@ export function KalimbaPage() {
 
   useEffect(() => {
     if (!loaded) return
-    const today = new Date().toISOString().slice(0, 10)
+    // 本地时区日期（UTC 在 +8 区会跨天错位）
+    const today = localYMD()
     if (lastDate !== today) {
-      const yesterday = new Date(Date.now() - 86400000).toISOString().slice(0, 10)
+      const yesterday = localYMD(-1)
       if (lastDate === yesterday) {
         const ns = streak + 1
         setStreak(ns)
@@ -232,6 +246,7 @@ export function KalimbaPage() {
 
   const handleNotePress = useCallback((note: typeof TINES[0]) => {
     playNote(note.freq)
+    lastNoteRef.current = Date.now()
     setActiveNotes((prev) => { const n = new Set(prev); n.add(note.id); return n })
     setTimeout(() => setActiveNotes((prev) => { const n = new Set(prev); n.delete(note.id); return n }), 250)
     if (!achievements.has('first_note')) unlockAch('first_note')
@@ -266,11 +281,11 @@ export function KalimbaPage() {
 
   // Keyboard
   useEffect(() => {
+    // 数字 1-9 = 中央 C4 + 右侧音阶（D4→D6）
+    // Q-I = 左侧高音区（E6→E4，从外到内）
     const keys: Record<string, number> = {
-      '1': 9, '2': 10, '3': 8, '4': 11, '5': 14, '6': 12, '7': 13,
-      '8': 7, '9': 6, '0': 5, '-': 4, '=': 3,
-      'q': 1, 'w': 2, 'e': 3, 'r': 4, 't': 5, 'y': 6, 'u': 7,
-      'z': 17, 'x': 16, 'c': 15, 'v': 14, 'b': 13, 'n': 12, 'm': 11,
+      '1': 1, '2': 2, '3': 4, '4': 6, '5': 8, '6': 10, '7': 12, '8': 14, '9': 16,
+      'q': 17, 'w': 15, 'e': 13, 'r': 11, 't': 9, 'y': 7, 'u': 5, 'i': 3,
     }
     const handler = (e: KeyboardEvent) => {
       if (e.repeat) return
@@ -308,7 +323,7 @@ export function KalimbaPage() {
         <h2 className="text-lg font-semibold text-zinc-800">拇指琴</h2>
         <div className="flex items-center gap-4 text-xs text-zinc-500">
           <span className="flex items-center gap-1"><Icon name="Clock" size={14} /> {streak} 天</span>
-          <span className="flex items-center gap-1"><Icon name="LayoutDashboard" size={14} /> {practiceMin} min</span>
+          <span className="flex items-center gap-1"><Icon name="LayoutDashboard" size={14} /> {practiceMin} 分钟</span>
           <span className="flex items-center gap-1"><Icon name="Check" size={14} /> {achievements.size} 勋章</span>
         </div>
       </div>
@@ -476,7 +491,7 @@ export function KalimbaPage() {
           <span>右手区域：低音区（长键）</span>
         </div>
         <p className="text-xs text-zinc-400 text-center mt-2">
-          键盘映射：左手 QWER TYU · 右手 1234 567 · 中央 89
+          键盘：数字 1-9 = 中央与右侧 · Q-I = 左侧高音
         </p>
       </div>
 
@@ -573,13 +588,13 @@ export function KalimbaPage() {
             <h3 className="text-sm font-semibold text-zinc-800 mb-3">练习日历</h3>
             <div className="grid grid-cols-7 gap-1">
               {Array.from({ length: 28 }, (_, i) => {
-                const d = new Date(Date.now() - (27 - i) * 86400000)
-                const dateStr = d.toISOString().slice(0, 10)
-                const practiced = dateStr === lastDate || i < streak
+                const dateStr = localYMD(-(27 - i))
+                // 最近 streak 天（含今天）高亮；修正原 i<streak 的错位
+                const practiced = dateStr === lastDate || i >= 28 - streak
                 return (
                   <div key={i} className={`aspect-square rounded-md flex items-center justify-center text-xs ${
                     practiced ? 'bg-indigo-100 text-indigo-700 font-medium' : 'bg-zinc-50 text-zinc-300'
-                  }`}>{d.getDate()}</div>
+                  }`}>{dateStr.slice(8)}</div>
                 )
               })}
             </div>

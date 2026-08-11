@@ -562,7 +562,7 @@ export function DrugsPage() {
 
           {/* ===== 备注弹窗 ===== */}
           {noteModal && (
-            <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/30" onClick={() => setNoteModal(false)}>
+            <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/30">
               <div
                 className="bg-white rounded-xl w-full max-w-md shadow-xl"
                 onClick={(e) => e.stopPropagation()}

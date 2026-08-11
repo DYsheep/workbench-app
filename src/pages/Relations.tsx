@@ -436,7 +436,7 @@ export function RelationsPage() {
       )}
 
       {showPersonForm&&editingPerson&&(
-        <div className="fixed inset-0 z-50 flex items-center justify-center" style={{background:'rgba(0,0,0,0.3)',backdropFilter:'blur(4px)'}} onClick={()=>{setShowPersonForm(false);setEditingPerson(null)}}>
+        <div className="fixed inset-0 z-50 flex items-center justify-center" style={{background:'rgba(0,0,0,0.3)',backdropFilter:'blur(4px)'}}>
           <div className="bg-white rounded-2xl p-6 w-full max-w-md mx-4 shadow-xl" onClick={e=>e.stopPropagation()} style={{maxHeight:'90vh',overflow:'auto'}}>
             <h3 className="text-sm font-semibold text-zinc-800 mb-4">{people.find(x=>x.id===editingPerson.id)?'编辑信息':`添加${cat.label}人物`}</h3>
             <div className="space-y-3">

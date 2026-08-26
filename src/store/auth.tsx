@@ -11,7 +11,7 @@ export interface User {
 
 interface AuthContextType {
   user: User | null
-  login: (username: string, password: string) => Promise<{ ok: boolean; error?: string }>
+  login: (username: string, password: string, remember?: boolean) => Promise<{ ok: boolean; error?: string }>
   logout: () => Promise<void>
   isAuthenticated: boolean
   loading: boolean
@@ -34,13 +34,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       .finally(() => setLoading(false))
   }, [])
 
-  const login = useCallback(async (username: string, password: string) => {
+  const login = useCallback(async (username: string, password: string, remember = false) => {
     try {
       const res = await fetch(`${API_BASE}/api/login`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         credentials: 'include',
-        body: JSON.stringify({ username, password }),
+        body: JSON.stringify({ username, password, remember }),
       })
       const data = await res.json()
       if (res.ok && data.user) {

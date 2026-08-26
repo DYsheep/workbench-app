@@ -3,9 +3,23 @@ import { useNavigate } from 'react-router-dom'
 import { useAuth } from '../store/auth'
 import { Icon } from '../components/icons'
 
+// 只存用户名，永不存密码——密码填充交给浏览器密码管理器
+const USERNAME_KEY = 'workbench-remember-user'
+
+function loadRememberedUsername(): string {
+  try {
+    return localStorage.getItem(USERNAME_KEY) || ''
+  } catch {
+    return ''
+  }
+}
+
 export function LoginPage() {
-  const [username, setUsername] = useState('yangdh')
-  const [password, setPassword] = useState('123456')
+  const rememberedUsername = loadRememberedUsername()
+  const [username, setUsername] = useState(rememberedUsername)
+  const [password, setPassword] = useState('')
+  const [rememberAccount, setRememberAccount] = useState(!!rememberedUsername)
+  const [rememberMe, setRememberMe] = useState(true)
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(false)
   const { login } = useAuth()
@@ -16,10 +30,15 @@ export function LoginPage() {
     setError('')
     setLoading(true)
 
-    const result = await login(username, password)
+    const result = await login(username, password, rememberMe)
     setLoading(false)
 
     if (result.ok) {
+      if (rememberAccount) {
+        localStorage.setItem(USERNAME_KEY, username)
+      } else {
+        localStorage.removeItem(USERNAME_KEY)
+      }
       navigate('/')
     } else {
       setError(result.error || '登录失败')
@@ -37,7 +56,7 @@ export function LoginPage() {
           <p className="text-sm text-zinc-500 mt-1">登录以继续使用</p>
         </div>
 
-        <form onSubmit={handleSubmit} className="bg-white rounded-xl border border-zinc-200 p-6 shadow-sm">
+        <form onSubmit={handleSubmit} autoComplete="on" className="bg-white rounded-xl border border-zinc-200 p-6 shadow-sm">
           {error && (
             <div className="mb-4 p-3 rounded-lg bg-red-50 border border-red-100 text-red-700 text-sm flex items-center gap-2">
               <Icon name="Info" size={16} />
@@ -47,23 +66,51 @@ export function LoginPage() {
 
           <div className="space-y-4">
             <div>
-              <label className="block text-sm font-medium text-zinc-700 mb-1.5">用户名</label>
+              <label htmlFor="login-username" className="block text-sm font-medium text-zinc-700 mb-1.5">用户名</label>
               <input
+                id="login-username"
+                name="username"
                 type="text"
                 value={username}
                 onChange={(e) => setUsername(e.target.value)}
+                placeholder="请输入用户名"
+                autoComplete="username"
                 className="w-full px-3 py-2.5 rounded-lg border border-zinc-300 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
                 autoFocus
               />
             </div>
             <div>
-              <label className="block text-sm font-medium text-zinc-700 mb-1.5">密码</label>
+              <label htmlFor="login-password" className="block text-sm font-medium text-zinc-700 mb-1.5">密码</label>
               <input
+                id="login-password"
+                name="password"
                 type="password"
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
+                placeholder="请输入密码"
+                autoComplete="current-password"
                 className="w-full px-3 py-2.5 rounded-lg border border-zinc-300 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
               />
+            </div>
+            <div className="space-y-2">
+              <label className="flex items-center gap-2 text-sm text-zinc-600 cursor-pointer select-none">
+                <input
+                  type="checkbox"
+                  checked={rememberAccount}
+                  onChange={(e) => setRememberAccount(e.target.checked)}
+                  className="w-4 h-4 rounded border-zinc-300 text-indigo-600 focus:ring-indigo-500"
+                />
+                记住账号
+              </label>
+              <label className="flex items-center gap-2 text-sm text-zinc-600 cursor-pointer select-none">
+                <input
+                  type="checkbox"
+                  checked={rememberMe}
+                  onChange={(e) => setRememberMe(e.target.checked)}
+                  className="w-4 h-4 rounded border-zinc-300 text-indigo-600 focus:ring-indigo-500"
+                />
+                30 天内免登录
+              </label>
             </div>
           </div>
 
@@ -74,10 +121,6 @@ export function LoginPage() {
           >
             {loading ? '登录中...' : '登 录'}
           </button>
-
-          <p className="text-xs text-zinc-400 text-center mt-4">
-            默认账号 yangdh / 123456
-          </p>
         </form>
 
         <p className="text-xs text-zinc-400 text-center mt-4">

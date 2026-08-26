@@ -157,16 +157,29 @@ try {
 }
 
 // ============================================================
-// Session 过期清理（TTL 7 天）
+// Session 过期策略（"记住我"长效会话）
+// 未勾选记住我：12 小时 + 会话 cookie（关闭浏览器即失效）
+// 勾选记住我：  30 天 + 持久 cookie
+// 历史会话（无 expires_at）：按创建时间 7 天兜底
 // 惰性：requireAuth 校验时顺手删过期会话
 // 周期：启动时 + 每 6 小时批量清理
 // ============================================================
-const SESSION_TTL_MS = 7 * 24 * 60 * 60 * 1000 // 7 天
+const SESSION_TTL_SHORT_MS = 12 * 60 * 60 * 1000     // 12 小时
+const SESSION_TTL_LONG_MS = 30 * 24 * 60 * 60 * 1000 // 30 天
+const LEGACY_SESSION_TTL_MS = 7 * 24 * 60 * 60 * 1000
+
+// sessions 表补充 expires_at 列（老库自动迁移，列已存在时忽略错误）
+try {
+  db.exec("ALTER TABLE sessions ADD COLUMN expires_at TEXT NOT NULL DEFAULT ''")
+} catch { /* 列已存在 */ }
 
 function cleanupExpiredSessions() {
   try {
-    const cutoff = new Date(Date.now() - SESSION_TTL_MS).toISOString()
-    const r = db.prepare('DELETE FROM sessions WHERE created_at < ?').run(cutoff)
+    const now = new Date().toISOString()
+    const legacyCutoff = new Date(Date.now() - LEGACY_SESSION_TTL_MS).toISOString()
+    const r = db.prepare(
+      "DELETE FROM sessions WHERE (expires_at != '' AND expires_at < ?) OR (expires_at = '' AND created_at < ?)"
+    ).run(now, legacyCutoff)
     if (r.changes > 0) console.log(`[Session] 清理过期会话 ${r.changes} 个`)
   } catch (e) {
     console.error('[Session] cleanup failed:', e.message)
@@ -174,8 +187,10 @@ function cleanupExpiredSessions() {
 }
 
 function sessionIsExpired(row) {
-  if (!row || !row.created_at) return true
-  return Date.now() - new Date(row.created_at).getTime() > SESSION_TTL_MS
+  if (!row) return true
+  if (row.expires_at) return Date.now() > new Date(row.expires_at).getTime()
+  if (!row.created_at) return true
+  return Date.now() - new Date(row.created_at).getTime() > LEGACY_SESSION_TTL_MS
 }
 
 // 启动清理 + 周期清理
@@ -253,7 +268,7 @@ function getSession(req) {
 function requireAuth(req, res) {
   const sessionId = getSession(req)
   if (!sessionId) { json(res, { error: '未登录' }, 401); return null }
-  const row = db.prepare('SELECT user_id, created_at FROM sessions WHERE id = ?').get(sessionId)
+  const row = db.prepare('SELECT user_id, created_at, expires_at FROM sessions WHERE id = ?').get(sessionId)
   if (!row) { json(res, { error: '会话过期' }, 401); return null }
   // 惰性清理：过期会话当场删除
   if (sessionIsExpired(row)) {
@@ -327,7 +342,7 @@ async function handleRequest(req, res) {
     })
     if (limiterResult !== null) return
 
-    const { username, password } = await parseBody(req)
+    const { username, password, remember } = await parseBody(req)
     if (!username || !password || password.length < 4) {
       return json(res, { error: '用户名或密码错误' }, 401)
     }
@@ -342,11 +357,16 @@ async function handleRequest(req, res) {
       return json(res, { error: '用户名或密码错误' }, 401)
     }
 
+    // 勾选"记住我"：30 天长效会话；否则 12 小时短会话
+    const ttl = remember ? SESSION_TTL_LONG_MS : SESSION_TTL_SHORT_MS
+    const expiresAt = new Date(Date.now() + ttl).toISOString()
     const sessionId = generateId()
-    db.prepare('INSERT INTO sessions (id, user_id) VALUES (?,?)').run(sessionId, user.id)
+    db.prepare('INSERT INTO sessions (id, user_id, expires_at) VALUES (?,?,?)').run(sessionId, user.id, expiresAt)
 
     const secure = NODE_ENV === 'production' ? '; Secure' : ''
-    res.setHeader('Set-Cookie', `session=${sessionId}; Path=/; HttpOnly; SameSite=Lax${secure}`)
+    // 记住我 → 持久 cookie（Max-Age 30 天）；否则 → 会话 cookie，关闭浏览器即失效
+    const maxAge = remember ? `; Max-Age=${Math.floor(SESSION_TTL_LONG_MS / 1000)}` : ''
+    res.setHeader('Set-Cookie', `session=${sessionId}; Path=/; HttpOnly; SameSite=Lax${secure}${maxAge}`)
     return json(res, { user: { id: user.id, name: user.name, role: user.role, avatar: user.avatar } })
   }
 
